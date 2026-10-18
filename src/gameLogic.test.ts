@@ -16,7 +16,18 @@ import {
   calloutOptions,
   chaosRuleSecondsLeft,
   checkPlayerNames,
+  addMission,
   crownMissionOfTheNight,
+  displaySeconds,
+  editMission,
+  EMPTY_MISSION_EDITS,
+  fromEditableText,
+  inKickoff,
+  missionLibrary,
+  removeMission,
+  restorePack,
+  roundDeadline,
+  toEditableText,
   dealRound,
   emptySessionStats,
   emptyStats,
@@ -38,6 +49,7 @@ import {
   secondsRemaining,
   unlockedAvatars,
 } from './gameLogic.ts';
+import { BRAND } from './brand.ts';
 import type { ChaosEvent, DealOptions, Lifetime, Player, PlayerStats, RoundOutcome } from './gameLogic.ts';
 
 const doubleDown = CHAOS_EVENTS.find((event) => event.id === 'double-down') as ChaosEvent;
@@ -106,8 +118,8 @@ describe('checkPlayerNames', () => {
 });
 
 describe('mission library', () => {
-  it('has 80+ missions with unique ids and enough per pack for a full group', () => {
-    assert.ok(MISSION_TEMPLATES.length >= 80, `${MISSION_TEMPLATES.length} missions`);
+  it('has 200+ missions with unique ids and enough per pack for a full group', () => {
+    assert.ok(MISSION_TEMPLATES.length >= 200, `${MISSION_TEMPLATES.length} missions`);
     assert.equal(new Set(MISSION_TEMPLATES.map((template) => template.id)).size, MISSION_TEMPLATES.length);
     assert.equal(new Set(MISSION_TEMPLATES.map((template) => template.text)).size, MISSION_TEMPLATES.length);
     for (const pack of PACK_OPTIONS) {
@@ -459,7 +471,7 @@ describe('makeShareMessage', () => {
   it('does not claim a winner before every mission is scored', () => {
     const players = [player('Ana', true), player('Ben', null), player('Cleo', false)];
     const message = makeShareMessage(players, [players[0]], 'classic', null);
-    assert.match(message, /^We played LOWKEY — here’s how the missions went!/);
+    assert.ok(message.startsWith(`We played ${BRAND.name} — here’s how the missions went!`));
     assert.match(message, /Ben: Mission for Ben — unscored/);
   });
 
@@ -467,14 +479,69 @@ describe('makeShareMessage', () => {
     const players = [player('Ana', true), player('Ben', true), player('Cleo', false)];
     const callouts = [{ accuser: 'Ana', suspect: 'Cleo', guess: 'x', correct: true }];
     const message = makeShareMessage(players, players.slice(0, 2), 'chaos', doubleDown, callouts);
-    assert.match(message, /^Ana & Ben won LOWKEY!/);
+    assert.ok(message.startsWith(`Ana & Ben won ${BRAND.name}!`));
     assert.match(message, /Mode: CHAOS · DOUBLE DOWN/);
     assert.match(message, /Cleo: Mission for Cleo — BUSTED/);
-    assert.match(message, /#LOWKEYGAME$/);
+    assert.ok(message.endsWith(`${BRAND.hashtag}\n${BRAND.credit}`));
   });
 
   it('handles a round where nobody completed a mission', () => {
     const players = [player('Ana', false), player('Ben', false), player('Cleo', false)];
     assert.match(makeShareMessage(players, [], 'sudden-death', null), /nobody completed a mission!\nMode: SUDDEN DEATH/);
+  });
+});
+
+describe('kickoff', () => {
+  it('starts the clock after the 3-2-1 and shows the full time until then', () => {
+    const now = 1_000_000;
+    const endsAt = roundDeadline(now, 60);
+    assert.equal(inKickoff(endsAt, now, 60), true);
+    assert.equal(displaySeconds(endsAt, now, 60), 60);
+    assert.equal(inKickoff(endsAt, now + 3500, 60), false);
+    assert.equal(displaySeconds(endsAt, now + 3500 + 10_000, 60), 50);
+  });
+});
+
+describe('mission library', () => {
+  const first = MISSION_TEMPLATES.find((template) => template.pack === 'dinner')!;
+
+  it('round-trips the @ target marker', () => {
+    assert.equal(toEditableText('Get {t} to dance.'), 'Get @ to dance.');
+    assert.equal(fromEditableText('  Get @ to   dance. '), 'Get {t} to dance.');
+    assert.equal(fromEditableText('Wave at the door'), '{t}: Wave at the door');
+    assert.equal(fromEditableText('   '), null);
+  });
+
+  it('edits, deletes, adds and restores missions', () => {
+    let edits = editMission(EMPTY_MISSION_EDITS, first, 'Get @ to sing.', 'hard');
+    let library = missionLibrary(edits);
+    assert.equal(library.find((template) => template.id === first.id)?.text, 'Get {t} to sing.');
+    assert.equal(library.find((template) => template.id === first.id)?.difficulty, 'hard');
+
+    edits = addMission(edits, 'dinner', 'Get @ to order dessert', 'easy', 'mine-1');
+    edits = editMission(edits, missionLibrary(edits).find((template) => template.id === 'mine-1')!, 'Get @ to order two desserts', 'medium');
+    library = missionLibrary(edits);
+    assert.equal(library.find((template) => template.id === 'mine-1')?.text, 'Get {t} to order two desserts');
+
+    edits = removeMission(edits, first.id);
+    edits = removeMission(edits, 'mine-1');
+    library = missionLibrary(edits);
+    assert.ok(!library.some((template) => template.id === first.id || template.id === 'mine-1'));
+
+    edits = restorePack(edits, 'dinner');
+    assert.deepEqual(edits, EMPTY_MISSION_EDITS);
+    assert.equal(missionLibrary(edits).length, MISSION_TEMPLATES.length);
+  });
+
+  it('deals from the edited library, and still deals when a pack was emptied', () => {
+    const dinner = MISSION_TEMPLATES.filter((template) => template.pack === 'dinner');
+    let edits = EMPTY_MISSION_EDITS;
+    for (const template of dinner) edits = removeMission(edits, template.id);
+    edits = addMission(edits, 'dinner', 'Get @ to say spaghetti', 'easy', 'mine-2');
+    const players = makeMissions(TEN_NAMES, options({ packs: ['dinner'], library: missionLibrary(edits) }), seededRandom(4));
+    assert.equal(players.length, 10);
+    assert.equal(new Set(players.map((entry) => entry.mission)).size, 10);
+    assert.ok(players.some((entry) => entry.missionId === 'mine-2'));
+    assert.ok(!players.some((entry) => dinner.some((template) => template.id === entry.missionId)));
   });
 });

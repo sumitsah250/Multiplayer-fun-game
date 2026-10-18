@@ -1,6 +1,7 @@
 # Keep the Docker build context small and free of local secrets.
 node_modules
 .git
+.claude
 .expo
 dist
 web-build
@@ -18,3 +19,6 @@ Dockerfile
 .dockerignore
 README.md
 *.test.ts
+
+# Google Play upload key
+google-play-service-account.json

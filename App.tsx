@@ -1,11 +1,19 @@
+import {
+  Baloo2_400Regular,
+  Baloo2_500Medium,
+  Baloo2_600SemiBold,
+  Baloo2_700Bold,
+  Baloo2_800ExtraBold,
+  useFonts,
+} from '@expo-google-fonts/baloo-2';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as Sharing from 'expo-sharing';
-import { useAudioPlayer } from 'expo-audio';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
-  Alert,
   AppState,
   BackHandler,
   Easing,
@@ -28,7 +36,6 @@ import {
   BADGES,
   CREATIVE_BONUS,
   DIFFICULTY_OPTIONS,
-  MAX_CUSTOM_MISSIONS,
   MIN_PLAYERS_FOR_DOUBLE_AGENT,
   MODE_OPTIONS,
   PACK_OPTIONS,
@@ -37,8 +44,11 @@ import {
   applySwap,
   chaosRuleSecondsLeft,
   checkPlayerNames,
-  cleanCustomMission,
   crownMissionOfTheNight,
+  displaySeconds,
+  missionLibrary,
+  roundDeadline,
+  EMPTY_MISSION_EDITS,
   dealRound,
   earnedBadges,
   emptySessionStats,
@@ -62,6 +72,7 @@ import {
   unlockedAvatars,
 } from './src/gameLogic';
 import type {
+  MissionEdits,
   Badge,
   Callout,
   ChaosEvent,
@@ -74,11 +85,35 @@ import type {
   RoundOutcome,
   RoundRecord,
 } from './src/gameLogic';
+import { BRAND } from './src/brand';
+import { confirmAction, showMessage } from './src/dialogs';
+import { Intro } from './src/Intro';
+import { MissionLibrary } from './src/MissionLibrary';
+import { ShareOptions } from './src/ShareSheet';
+import { FONTS, RADIUS, THEME, TONE_COLORS, TONE_CYCLE } from './src/theme';
 import { AvatarPicker, CallOutPanel, ChaosEventCard, DifficultyTag, Leaderboard, MissionBody, PeekPanel } from './src/gameUi';
 import { haptic, hapticPattern, setHapticsEnabled } from './src/haptics';
-import { BustedOverlay, Entrance, HoldToReveal, Sheet, Stamp, SwipeVote, TONES, TimerRing, Toast } from './src/motion';
+import { SoundProvider, useSound } from './src/sounds';
+import {
+  Bob,
+  BustedOverlay,
+  Entrance,
+  Kickoff,
+  HoldToReveal,
+  PopIn,
+  PopOnChange,
+  RotatingText,
+  Sheet,
+  Stamp,
+  SuspenseLights,
+  SwipeVote,
+  TONES,
+  TimerRing,
+  Toast,
+  Wobble,
+} from './src/motion';
 import type { BustEvent } from './src/motion';
-import { COLORS, Eyebrow, KeepScreenAwake, PrimaryButton, ProtectMissions } from './src/ui';
+import { COLORS, Eyebrow, KeepScreenAwake, PartyTile, PrimaryButton, ProtectMissions } from './src/ui';
 import { GuestRoom } from './src/room/GuestRoom';
 import { roomsConfigured } from './src/room/client';
 import { everyoneReady, isReady, isValidRoomCode, makeMemberId, makeRoomCode, normalizeRoomCode } from './src/room/protocol';
@@ -90,8 +125,10 @@ import {
   clearLifetime,
   loadLastRoom,
   loadLifetime,
+  loadMissionEdits,
   loadSetup,
   saveLastRoom,
+  saveMissionEdits,
   saveSetup,
   updateLifetime,
 } from './src/storage';
@@ -108,8 +145,8 @@ type Stage =
   | 'summary'
   | 'room-start'
   | 'guest'
-  | 'fame';
-type SoundPlayer = ReturnType<typeof useAudioPlayer>;
+  | 'fame'
+  | 'missions';
 type Reaction = { id: number; message: string };
 type SheetState = { kind: 'callout' } | { kind: 'peek'; names: string[] | null; title?: string } | null;
 type GuestJoin = { code: string; name: string; memberId: string; avatar: string };
@@ -230,6 +267,33 @@ function Celebration({ reduceMotion }: { reduceMotion: boolean }) {
   );
 }
 
+// The home speech bubble cycles through a few sample missions.
+const HOME_TEASERS = [
+  '“Just say pizza…”',
+  '“Get a high-five…”',
+  '“Make them laugh.”',
+  '“Say yaar. Just once.”',
+  '“Make them blush.”',
+  '“Chai, anyone?”',
+];
+const PLAYING_TIPS = [
+  'If they ask why, don’t tell them why.',
+  'Act natural. Natural people don’t say “act natural.”',
+  'Think someone’s working on you? Call it out.',
+  'Smile less. Smiling is suspicious.',
+];
+const HALFWAY_TIPS = [
+  'Hints are open. Stuck? Peek for one.',
+  'Halfway there. Time to get bold.',
+  'Someone is definitely onto you. Probably.',
+];
+
+// Web only: turns a captured data URI into a File the browser can share.
+async function pictureFile(dataUri: string) {
+  const blob = await (await fetch(dataUri)).blob();
+  return { dataUri, file: new File([blob], 'party-spy-results.png', { type: 'image/png' }) };
+}
+
 function formatClock(seconds: number) {
   return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 }
@@ -238,15 +302,36 @@ function sameName(left: string, right: string) {
   return playerKey(left) === playerKey(right);
 }
 
+// Keep the system splash screen up until the fonts are ready; the animated
+// intro then takes over from the same logo.
+SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
 export default function App() {
+  const [introDone, setIntroDone] = useState(false);
+  const [fontsLoaded] = useFonts({
+    Baloo2_400Regular,
+    Baloo2_500Medium,
+    Baloo2_600SemiBold,
+    Baloo2_700Bold,
+    Baloo2_800ExtraBold,
+  });
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hide();
+  }, [fontsLoaded]);
   return (
-    <GestureHandlerRootView style={[styles.root, Platform.OS === 'web' && styles.webRoot]}>
+    <GestureHandlerRootView style={[styles.root, styles.rootBackground]}>
+      <LinearGradient colors={[THEME.bgTop, THEME.bg, THEME.bgDeep]} style={StyleSheet.absoluteFill} />
       {/* On the web (e.g. a laptop browser), keep the phone-sized layout in a centred column. */}
       <View style={[styles.root, Platform.OS === 'web' && styles.webColumn]}>
-        <SafeAreaProvider>
-          <Game />
-        </SafeAreaProvider>
+        {fontsLoaded && (
+          <SafeAreaProvider>
+            <SoundProvider>
+              <Game />
+            </SoundProvider>
+          </SafeAreaProvider>
+        )}
       </View>
+      {fontsLoaded && !introDone && <Intro onDone={() => setIntroDone(true)} />}
     </GestureHandlerRootView>
   );
 }
@@ -268,7 +353,7 @@ function Game() {
   const [missionVisible, setMissionVisible] = useState(false);
   const [endsAt, setEndsAt] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const { enabled: soundEnabled, setEnabled: setSoundEnabled, play } = useSound();
   const [selectedMode, setSelectedMode] = useState<GameMode>('classic');
   const [roundMode, setRoundMode] = useState<GameMode>('classic');
   const [chaosEvent, setChaosEvent] = useState<ChaosEvent | null>(null);
@@ -278,7 +363,12 @@ function Game() {
   const [difficulty, setDifficulty] = useState<DifficultySetting>(DEFAULT_SETUP.difficulty);
   const [doubleAgent, setDoubleAgent] = useState(DEFAULT_SETUP.doubleAgent);
   const [customMissions, setCustomMissions] = useState<string[]>(DEFAULT_SETUP.customMissions);
-  const [customDraft, setCustomDraft] = useState('');
+  const [missionEdits, setMissionEdits] = useState<MissionEdits>(EMPTY_MISSION_EDITS);
+  // Where "Done" in the mission library goes back to.
+  const [libraryReturn, setLibraryReturn] = useState<Stage>('home');
+  const [kickoffRound, setKickoffRound] = useState(0);
+  const [shareOpen, setShareOpen] = useState(false);
+  const webPicture = useRef<{ dataUri: string; file: File } | null>(null);
   // Avatar picked on each setup row (by row, so picking before typing a name sticks).
   const [avatarPicks, setAvatarPicks] = useState<(string | undefined)[]>([]);
   // This round's extras.
@@ -309,36 +399,19 @@ function Game() {
   const shareCardRef = useRef<View>(null);
   const [screenOpacity] = useState(() => new Animated.Value(1));
   const [screenOffset] = useState(() => new Animated.Value(0));
-  const [heroFloat] = useState(() => new Animated.Value(0));
   const [livePulse] = useState(() => new Animated.Value(1));
   const tickedSecond = useRef<number | null>(null);
+  const durationRef = useRef(300);
   const commentedRound = useRef(0);
   const reactionId = useRef(0);
   const bustKey = useRef(0);
   const shownCallouts = useRef(0);
-  const soundEnabledRef = useRef(soundEnabled);
   const stageRef = useRef(stage);
   const playersRef = useRef(players);
   const roundIdRef = useRef(roundId);
-  const sharingRef = useRef(false);
   const setupScrollRef = useRef<ScrollView>(null);
   const nameListY = useRef(0);
   const nameRowY = useRef<number[]>([]);
-  const tapPlayer = useAudioPlayer(require('./assets/sounds/tap.wav'));
-  const secretPlayer = useAudioPlayer(require('./assets/sounds/secret.wav'));
-  const revealPlayer = useAudioPlayer(require('./assets/sounds/reveal.wav'));
-
-  const playSound = useCallback((player: SoundPlayer) => {
-    if (!soundEnabled) return;
-    player.seekTo(0);
-    player.play();
-  }, [soundEnabled]);
-
-  const playTap = useCallback(() => playSound(tapPlayer), [playSound, tapPlayer]);
-
-  useEffect(() => {
-    soundEnabledRef.current = soundEnabled;
-  }, [soundEnabled]);
 
   useEffect(() => {
     stageRef.current = stage;
@@ -353,9 +426,10 @@ function Game() {
   // Load what this device remembers: lifetime stats, setup choices, last room.
   useEffect(() => {
     let active = true;
-    void Promise.all([loadLifetime(), loadSetup(), loadLastRoom()]).then(([savedLifetime, setup, savedRoom]) => {
+    void Promise.all([loadLifetime(), loadSetup(), loadLastRoom(), loadMissionEdits()]).then(([savedLifetime, setup, savedRoom, edits]) => {
       if (!active) return;
       setLifetime(savedLifetime);
+      setMissionEdits(edits);
       setPacks(setup.packs);
       setDifficulty(setup.difficulty);
       setDoubleAgent(setup.doubleAgent);
@@ -371,6 +445,12 @@ function Game() {
   useEffect(() => {
     if (setupLoaded) saveSetup({ packs, difficulty, doubleAgent, customMissions });
   }, [customMissions, difficulty, doubleAgent, packs, setupLoaded]);
+
+  useEffect(() => {
+    if (setupLoaded) saveMissionEdits(missionEdits);
+  }, [missionEdits, setupLoaded]);
+
+  const library = useMemo(() => missionLibrary(missionEdits), [missionEdits]);
 
   // Hide a revealed mission as soon as the app leaves the foreground, so it is
   // not still showing when the phone comes back for the next player.
@@ -403,14 +483,11 @@ function Game() {
     if (stage !== 'reveal' || revealReady) return undefined;
     const timeout = setTimeout(() => {
       setRevealReady(true);
-      if (soundEnabledRef.current) {
-        revealPlayer.seekTo(0);
-        revealPlayer.play();
-      }
+      play('reveal');
       hapticPattern(['heavy', 'success'], 140);
     }, reduceMotion ? 220 : 850);
     return () => clearTimeout(timeout);
-  }, [reduceMotion, revealPlayer, revealReady, roundId, stage]);
+  }, [play, reduceMotion, revealReady, roundId, stage]);
 
   useEffect(() => {
     if (!reaction) return undefined;
@@ -457,9 +534,10 @@ function Game() {
     if (stage !== 'playing' || endsAt === null) return undefined;
 
     const updateCountdown = () => {
-      const remaining = secondsRemaining(endsAt, Date.now());
-      setSecondsLeft((previous) => (previous === remaining ? previous : remaining));
-      if (remaining === 0) {
+      const now = Date.now();
+      const shown = displaySeconds(endsAt, now, durationRef.current);
+      setSecondsLeft((previous) => (previous === shown ? previous : shown));
+      if (secondsRemaining(endsAt, now) === 0) {
         setEndsAt(null);
         setRevealReady(false);
         setCommentary(randomItem(PERSONALITY.suspense));
@@ -500,28 +578,6 @@ function Game() {
   }, [reduceMotion, screenOffset, screenOpacity, stage]);
 
   useEffect(() => {
-    if (stage !== 'home' || reduceMotion) return undefined;
-    const floatAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(heroFloat, {
-          toValue: -9,
-          duration: 900,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(heroFloat, {
-          toValue: 0,
-          duration: 900,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    floatAnimation.start();
-    return () => floatAnimation.stop();
-  }, [heroFloat, reduceMotion, stage]);
-
-  useEffect(() => {
     if (stage !== 'playing' || reduceMotion) return undefined;
     const pulseAnimation = Animated.loop(
       Animated.sequence([
@@ -545,21 +601,24 @@ function Game() {
 
   useEffect(() => {
     if (stage === 'deal' && missionVisible) {
-      playSound(secretPlayer);
+      play('secret');
       hapticPattern(['tick', 'success'], 90);
     }
-  }, [missionVisible, playSound, secretPlayer, stage]);
+  }, [missionVisible, play, stage]);
 
   // Final ten seconds: a tick sound and a heartbeat, in step with the ring's pulse.
   useEffect(() => {
-    if (stage !== 'playing' || secondsLeft > 10 || secondsLeft <= 0) return;
+    if (stage !== 'playing' || secondsLeft > 5 || secondsLeft <= 0) return;
     if (tickedSecond.current === secondsLeft) return;
     tickedSecond.current = secondsLeft;
-    playTap();
+    play('tick');
     hapticPattern(secondsLeft <= 3 ? ['heavy', 'heavy'] : ['heavy', 'tick'], 120);
-  }, [playTap, secondsLeft, stage]);
+  }, [play, secondsLeft, stage]);
 
   const gameDurationSeconds = roundDurationSeconds(roundMode, duration);
+  useEffect(() => {
+    durationRef.current = gameDurationSeconds;
+  }, [gameDurationSeconds]);
   const elapsedSeconds = Math.max(0, gameDurationSeconds - secondsLeft);
   const pastHalfway = stage === 'playing' && isPastHalfway(elapsedSeconds, gameDurationSeconds);
 
@@ -568,8 +627,9 @@ function Game() {
     if (!pastHalfway || !swapPair || swapped) return;
     setSwapped(true);
     setPlayers((current) => applySwap(current, swapPair));
+    play('swap');
     hapticPattern(['heavy', 'tick', 'heavy'], 120);
-  }, [pastHalfway, swapPair, swapped]);
+  }, [pastHalfway, play, swapPair, swapped]);
 
   // A new call-out lands: everyone sees BUSTED (or the wrong call).
   useEffect(() => {
@@ -682,7 +742,10 @@ function Game() {
   const showBadges = (before: Lifetime, after: Lifetime) => {
     setLifetime(after);
     const earned = newBadges(before, after);
-    if (earned.length) setBadgeNotices((queue) => [...queue, ...earned]);
+    if (earned.length) {
+      play('badge');
+      setBadgeNotices((queue) => [...queue, ...earned]);
+    }
   };
 
   const saveRoundToLifetime = () => {
@@ -694,6 +757,7 @@ function Game() {
 
   const beginRound = (roundPlayers: string[], mode: GameMode, avatars: Record<string, string>) => {
     const dealt = dealRound(roundPlayers, mode, {
+      library,
       packs,
       difficulty,
       customMissions,
@@ -773,7 +837,7 @@ function Game() {
     // In a room, deal to whoever is connected now (people may have joined or left).
     const current = checkPlayerNames(roomMemberNames);
     if (!current.canStart) {
-      Alert.alert(
+      showMessage(
         'Not enough players',
         current.hasDuplicateNames
           ? 'Two people in the room share a name. Ask one of them to rejoin with a different name.'
@@ -798,13 +862,14 @@ function Game() {
     }
   };
 
+  // The deadline includes the "3, 2, 1… let's start the chaos!" kickoff.
   const startTimer = () => {
-    const deadline = Date.now() + gameDurationSeconds * 1000;
     tickedSecond.current = null;
-    setEndsAt(deadline);
+    durationRef.current = gameDurationSeconds;
+    setEndsAt(roundDeadline(Date.now(), gameDurationSeconds));
     setSecondsLeft(gameDurationSeconds);
+    setKickoffRound(roundId);
     setStage('playing');
-    hapticPattern(['heavy', 'success'], 120);
   };
 
   const showReveal = useCallback(() => {
@@ -818,24 +883,26 @@ function Game() {
   }, []);
 
   const finishEarly = useCallback(() => {
-    Alert.alert('End the game?', 'The missions will be revealed to everyone.', [
-      { text: 'Keep playing', style: 'cancel' },
-      { text: 'Reveal missions', style: 'destructive', onPress: showReveal },
-    ]);
+    confirmAction({
+      title: 'End the game?',
+      message: 'The missions will be revealed to everyone.',
+      cancelText: 'Keep playing',
+      confirmText: 'Reveal missions',
+      onConfirm: showReveal,
+    });
   }, [showReveal]);
 
   const closeRoom = useCallback(() => {
-    Alert.alert('Close the room?', 'Everyone in the room will be disconnected.', [
-      { text: 'Keep it open', style: 'cancel' },
-      {
-        text: 'Close room',
-        style: 'destructive',
-        onPress: () => {
-          setRoom(null);
-          setStage('home');
-        },
+    confirmAction({
+      title: 'Close the room?',
+      message: 'Everyone in the room will be disconnected.',
+      cancelText: 'Keep it open',
+      confirmText: 'Close room',
+      onConfirm: () => {
+        setRoom(null);
+        setStage('home');
       },
-    ]);
+    });
   }, []);
 
   const openSheet = (next: NonNullable<SheetState>) => {
@@ -843,51 +910,88 @@ function Game() {
     setSheet(next);
   };
 
-  // Android back: close overlays first, step back where that is safe, and never
-  // drop a round in progress.
+  // Back, for the header button and Android's back button alike: close overlays
+  // first, then step back one screen. Anything that would lose progress asks.
+  const goBack = (): boolean => {
+    if (bust) {
+      setBust(null);
+      return true;
+    }
+    if (sheet) {
+      setSheet(null);
+      return true;
+    }
+    if (shareOpen) {
+      setShareOpen(false);
+      return true;
+    }
+    switch (stage) {
+      case 'home':
+        return false;
+      case 'guest':
+        confirmAction({
+          title: 'Leave the room?',
+          message: 'You can jump back in from the Private room screen while the game is still on.',
+          cancelText: 'Stay',
+          confirmText: 'Leave',
+          onConfirm: () => {
+            setGuestJoin(null);
+            void loadLastRoom().then(setLastRoom);
+            setStage('room-start');
+          },
+        });
+        return true;
+      case 'missions':
+        setStage(libraryReturn);
+        return true;
+      case 'room-start':
+      case 'fame':
+        setStage('home');
+        return true;
+      case 'setup':
+        if (room) closeRoom();
+        else setStage('home');
+        return true;
+      case 'deal':
+      case 'ready':
+        confirmAction({
+          title: 'Cancel this round?',
+          message: 'The missions will be cleared. You can change players or deal again.',
+          cancelText: 'Keep going',
+          confirmText: 'Cancel round',
+          onConfirm: () => setStage('setup'),
+        });
+        return true;
+      case 'playing':
+        finishEarly();
+        return true;
+      case 'reveal':
+        // Back from the results: change players or mode (the scores are kept).
+        startFreshSession();
+        return true;
+      case 'share':
+      case 'summary':
+        setStage('reveal');
+        return true;
+      default:
+        return true;
+    }
+  };
+  const goBackRef = useRef(goBack);
   useEffect(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (bust) {
-        setBust(null);
-        return true;
-      }
-      if (sheet) {
-        setSheet(null);
-        return true;
-      }
-      switch (stage) {
-        case 'home':
-          return false;
-        case 'guest':
-          // The guest screen handles back itself (it never drops you out of a room).
-          return false;
-        case 'room-start':
-        case 'fame':
-          setStage('home');
-          return true;
-        case 'setup':
-          if (room) closeRoom();
-          else setStage('home');
-          return true;
-        case 'share':
-        case 'summary':
-          setStage('reveal');
-          return true;
-        case 'playing':
-          finishEarly();
-          return true;
-        default:
-          return true;
-      }
-    });
+    goBackRef.current = goBack;
+  });
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => goBackRef.current());
     return () => subscription.remove();
-  }, [bust, closeRoom, finishEarly, room, sheet, stage]);
+  }, []);
 
   const setMissionOutcome = (name: string, completed: boolean) => {
     if (votesLocked) return;
     setPlayers((currentPlayers) =>
       currentPlayers.map((player) => (sameName(player.name, name) ? { ...player, completed } : player)),
     );
+    play(completed ? 'success' : 'nope');
     haptic(completed ? 'success' : 'error');
   };
 
@@ -913,38 +1017,66 @@ function Game() {
 
   const shareMessage = makeShareMessage(resolvedPlayers, winners, roundMode, chaosEvent, callouts);
 
-  const shareResults = async () => {
-    // A double tap would otherwise open the image sheet and then the text fallback.
-    if (sharingRef.current) return;
-    sharingRef.current = true;
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !shareOpen || !shareCardRef.current) return undefined;
+    let active = true;
+    webPicture.current = null;
+    captureRef(shareCardRef, { format: 'png', quality: 1, result: 'data-uri' })
+      .then(pictureFile)
+      .then((picture) => {
+        if (active) webPicture.current = picture;
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [shareOpen]);
+
+  // Shares the reveal card as a picture. Phones get the system share menu
+  // (Instagram, Snapchat, WhatsApp…); browsers use their share menu when they
+  // can share files, and otherwise download the picture. Returns a status line.
+  const shareImage = async (): Promise<string | null> => {
+    if (!shareCardRef.current) return 'The card isn’t ready yet. Try again in a second.';
     try {
-      if (!shareCardRef.current) throw new Error('The share card is not ready yet.');
-      const imageUri = await captureRef(shareCardRef, {
-        format: 'png',
-        quality: 1,
-        result: 'tmpfile',
-      });
+      if (Platform.OS === 'web') {
+        // Browsers only open their share menu right after a tap, so use the
+        // picture made when the panel opened rather than making one now.
+        let picture = webPicture.current;
+        if (!picture) {
+          picture = await pictureFile(await captureRef(shareCardRef, { format: 'png', quality: 1, result: 'data-uri' }));
+          webPicture.current = picture;
+        }
+        if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [picture.file] })) {
+          try {
+            await navigator.share({ files: [picture.file], title: `We played ${BRAND.name}!`, text: shareMessage });
+            return null;
+          } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') return null;
+            // NotAllowedError and friends: download it instead.
+          }
+        }
+        const link = document.createElement('a');
+        link.href = picture.dataUri;
+        link.download = 'party-spy-results.png';
+        link.click();
+        return '✓ Picture downloaded. Post it anywhere.';
+      }
+      const uri = await captureRef(shareCardRef, { format: 'png', quality: 1, result: 'tmpfile' });
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(imageUri, {
+        await Sharing.shareAsync(uri, {
           mimeType: 'image/png',
-          dialogTitle: 'Share your LOWKEY reveal',
+          dialogTitle: `Share your ${BRAND.name} results`,
           UTI: 'public.png',
         });
-      } else {
-        await Share.share({ message: shareMessage });
+        return null;
       }
+      await Share.share({ message: shareMessage });
+      return null;
     } catch (error) {
-      if (__DEV__) {
-        console.warn('Image sharing is unavailable; sharing the text reveal instead.', error);
-      }
-      try {
-        await Share.share({ message: shareMessage });
-      } catch (shareError) {
-        const message = shareError instanceof Error ? shareError.message : 'Please try sharing again.';
-        Alert.alert('Could not share the reveal', message);
-      }
-    } finally {
-      sharingRef.current = false;
+      // Closing the browser's share menu isn't an error.
+      if (error instanceof Error && error.name === 'AbortError') return null;
+      if (__DEV__) console.warn('Could not share the picture.', error);
+      return 'Couldn’t make the picture here. Try WhatsApp or Copy text instead.';
     }
   };
 
@@ -1004,22 +1136,21 @@ function Game() {
   const crownMission = (candidate: { key: string; name: string }) => {
     if (motn) return;
     setMotn(candidate);
+    play('badge');
     hapticPattern(['heavy', 'success'], 140);
     void updateLifetime((current) => crownMissionOfTheNight(current, candidate.name)).then(({ before, after }) =>
       showBadges(before, after),
     );
   };
 
-  const addCustomMission = () => {
-    const mission = cleanCustomMission(customDraft);
-    if (!mission || customMissions.length >= MAX_CUSTOM_MISSIONS) return;
-    if (customMissions.some((existing) => existing.toLocaleLowerCase() === mission.toLocaleLowerCase())) {
-      setCustomDraft('');
-      return;
-    }
-    setCustomMissions((current) => [...current, mission]);
-    setCustomDraft('');
-    haptic('success');
+  const openLibrary = (from: Stage) => {
+    setLibraryReturn(from);
+    setStage('missions');
+  };
+
+  const playVibe = (pack: PackId) => {
+    setPacks([pack]);
+    setStage('setup');
   };
 
   const togglePack = (pack: PackId) => {
@@ -1079,36 +1210,43 @@ function Game() {
 
   return (
     <SafeAreaView style={styles.app}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       {stage === 'playing' && <KeepScreenAwake />}
       {stage === 'deal' && <ProtectMissions />}
       {sheet && <ProtectMissions tag="mission-sheet" />}
       <View style={styles.topBar}>
+        {stage !== 'home' && (
+          <Pressable
+            accessibilityLabel="Back"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => {
+              haptic('tap');
+              goBack();
+            }}
+            style={styles.headerBack}
+          >
+            <Text style={styles.headerBackText}>←</Text>
+          </Pressable>
+        )}
         <View style={styles.brand}>
           <View style={styles.brandMark}>
-            <Text style={styles.brandMarkText}>L</Text>
+            <Text style={styles.brandMarkText}>{BRAND.mark}</Text>
           </View>
-          <Text style={styles.brandName}>LOWKEY</Text>
+          <Text style={styles.brandName}>{BRAND.name}</Text>
         </View>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={soundEnabled ? 'Mute sound effects' : 'Enable sound effects'}
           accessibilityState={{ selected: soundEnabled }}
           onPress={() => {
-            if (soundEnabled) {
-              // Stop anything still playing so muting takes effect immediately.
-              for (const player of [tapPlayer, secretPlayer, revealPlayer]) player.pause();
-            } else {
-              tapPlayer.seekTo(0);
-              tapPlayer.play();
-            }
             setSoundEnabled(!soundEnabled);
+            if (!soundEnabled) setTimeout(() => play('land'), 0);
           }}
           style={styles.soundToggle}
         >
-          <Text style={styles.soundToggleText}>{soundEnabled ? '♫' : '♪̸'}</Text>
+          <Text style={styles.soundToggleText}>{soundEnabled ? '🔊' : '🔇'}</Text>
         </Pressable>
-        <Text style={styles.topTag}>DO IT. DON’T GET CAUGHT.</Text>
       </View>
 
       <Animated.View
@@ -1119,47 +1257,98 @@ function Game() {
       >
       {stage === 'home' && (
         <ScrollView contentContainerStyle={styles.homeContent}>
-          <View style={styles.hero}>
-            <View style={styles.heroSticker}>
-              <Text style={styles.stickerText}>👀 KEEP A STRAIGHT FACE</Text>
+          <LinearGradient
+            colors={[THEME.pink, THEME.violet]}
+            end={{ x: 1, y: 1 }}
+            start={{ x: 0, y: 0 }}
+            style={styles.hero}
+          >
+            <View style={styles.heroStickers} pointerEvents="none">
+              <Bob delay={0}>
+                <Text style={styles.stickerBig}>🕵️</Text>
+              </Bob>
+              <Bob delay={500} distance={5}>
+                <Text style={styles.stickerSmall}>🎉</Text>
+              </Bob>
             </View>
-            <Text style={styles.heroTitle}>Do it.{'\n'}Don’t get caught.</Text>
-            <Text style={styles.heroCopy}>
-              Secret missions. Your real friends. One very suspicious hangout.
+            <Text style={styles.heroKicker}>{BRAND.tagline.toUpperCase()}</Text>
+            <Text style={styles.heroTitle}>
+              Do it.{'\n'}
+              <Text style={styles.heroTitleAccent}>Don’t get caught.</Text>
             </Text>
-            <Animated.View style={[styles.heroDoodle, { transform: [{ translateY: heroFloat }] }]}>
-              <Text style={styles.doodleText}>🤫</Text>
-              <View style={styles.doodleBubble}>
-                <Text style={styles.bubbleText}>“Just say pizza…”</Text>
-              </View>
-            </Animated.View>
+            <Text style={styles.heroCopy}>Secret missions for parties, family nights and every hangout in between.</Text>
+            <View style={styles.teaser}>
+              <Text style={styles.teaserEmoji}>🤫</Text>
+              <RotatingText lines={HOME_TEASERS} style={styles.teaserText} />
+            </View>
+          </LinearGradient>
+
+          <PrimaryButton label="▶  PLAY NOW" onPress={() => setStage('setup')} tone="yellow" />
+          <PrimaryButton label="📱  EVERYONE ON THEIR OWN PHONE" onPress={() => setStage('room-start')} tone="cyan" />
+
+          <View style={styles.tileRow}>
+            <PartyTile
+              accessibilityLabel={`Mission library, ${library.length + customMissions.length} missions`}
+              onPress={() => openLibrary('home')}
+              style={styles.tile}
+              tone="pink"
+            >
+              <Text style={styles.tileEmoji}>📚</Text>
+              <Text style={styles.tileTitle}>MISSIONS</Text>
+              <Text style={styles.tileSub}>{library.length + customMissions.length} to play · edit</Text>
+            </PartyTile>
+            <PartyTile accessibilityLabel="Hall of Fame" onPress={() => setStage('fame')} style={styles.tile} tone="lime">
+              <Text style={styles.tileEmoji}>🏅</Text>
+              <Text style={styles.tileTitle}>HALL OF FAME</Text>
+              <Text style={styles.tileSub}>badges & stats</Text>
+            </PartyTile>
           </View>
 
-          <PrimaryButton label="LET’S PLAY  →" onPressIn={playTap} onPress={() => setStage('setup')} />
-          <PrimaryButton
-            label="PRIVATE ROOM · EVERYONE’S PHONE"
-            onPressIn={playTap}
-            onPress={() => setStage('room-start')}
-            secondary
-          />
-          <PrimaryButton label="🏅  HALL OF FAME" onPressIn={playTap} onPress={() => setStage('fame')} secondary />
+          <Text style={styles.sectionTitle}>PICK A VIBE</Text>
+          <ScrollView contentContainerStyle={styles.vibeRow} horizontal showsHorizontalScrollIndicator={false}>
+            {PACK_OPTIONS.map((pack, index) => (
+              <PartyTile
+                accessibilityLabel={`Play with ${pack.title} missions`}
+                key={pack.id}
+                onPress={() => playVibe(pack.id)}
+                style={styles.vibe}
+                tone={TONE_CYCLE[index % TONE_CYCLE.length]}
+              >
+                <Text style={styles.vibeEmoji}>{pack.emoji}</Text>
+                <Text style={styles.vibeTitle}>{pack.title}</Text>
+                <Text style={styles.vibeCount}>{library.filter((template) => template.pack === pack.id).length} missions</Text>
+              </PartyTile>
+            ))}
+          </ScrollView>
+
           <View style={styles.howCard}>
-            <Eyebrow>THE WHOLE GAME</Eyebrow>
-            <View style={styles.stepRow}>
-              <Text style={styles.stepNumber}>01</Text>
-              <Text style={styles.stepText}>Get a secret mission. Keep it secret.</Text>
-            </View>
-            <View style={styles.stepRow}>
-              <Text style={styles.stepNumber}>02</Text>
-              <Text style={styles.stepText}>Pull it off. Think someone’s after you? Call it out.</Text>
-            </View>
-            <View style={[styles.stepRow, styles.lastStep]}>
-              <Text style={styles.stepNumber}>03</Text>
-              <Text style={styles.stepText}>Reveal everything. Swipe to vote. Accuse your friends.</Text>
-            </View>
+            <Text style={styles.sectionTitleInCard}>HOW TO PLAY</Text>
+            {[
+              ['🤫', 'Get a secret mission. Keep a straight face.'],
+              ['🎯', 'Pull it off. Think someone’s after you? Call it out!'],
+              ['🗳️', 'Reveal everything, swipe to vote, crown the winner.'],
+            ].map(([emoji, text], index) => (
+              <View key={text} style={styles.stepRow}>
+                <View style={[styles.stepBadge, { backgroundColor: TONE_COLORS[TONE_CYCLE[index]].face }]}>
+                  <Text style={styles.stepEmoji}>{emoji}</Text>
+                </View>
+                <Text style={styles.stepText}>{text}</Text>
+              </View>
+            ))}
           </View>
-          <Text style={styles.homeNote}>3–10 PLAYERS · ONE PHONE OR A PRIVATE ROOM · NO ACCOUNTS</Text>
+          <Text style={styles.homeNote}>3–10 PLAYERS · ONE PHONE OR EVERYONE’S · NO ACCOUNTS</Text>
+          <Text style={styles.credit}>✨ {BRAND.credit.toUpperCase()} ✨</Text>
         </ScrollView>
+      )}
+
+      {stage === 'missions' && (
+        <MissionLibrary
+          customMissions={customMissions}
+          edits={missionEdits}
+          onBack={() => setStage(libraryReturn)}
+          onCustomMissionsChange={setCustomMissions}
+          onEditsChange={setMissionEdits}
+        />
       )}
 
       {stage === 'fame' && (
@@ -1205,16 +1394,15 @@ function Game() {
           {fameEntries.length > 0 && (
             <Pressable
               onPress={() =>
-                Alert.alert('Clear the Hall of Fame?', 'All lifetime stats and badges on this phone will be deleted.', [
-                  { text: 'Keep them', style: 'cancel' },
-                  {
-                    text: 'Clear',
-                    style: 'destructive',
-                    onPress: () => {
-                      void clearLifetime().then(() => setLifetime({}));
-                    },
+                confirmAction({
+                  title: 'Clear the Hall of Fame?',
+                  message: 'All lifetime stats and badges on this phone will be deleted.',
+                  cancelText: 'Keep them',
+                  confirmText: 'Clear',
+                  onConfirm: () => {
+                    void clearLifetime().then(() => setLifetime({}));
                   },
-                ])
+                })
               }
               style={styles.backLink}
             >
@@ -1254,7 +1442,6 @@ function Game() {
                     </Text>
                     <PrimaryButton
                       label={`REJOIN ${lastRoom.code}  →`}
-                      onPressIn={playTap}
                       onPress={() =>
                         enterGuestRoom({
                           code: lastRoom.code,
@@ -1282,7 +1469,7 @@ function Game() {
                       setRoomAvatarPick(null);
                     }}
                     placeholder="Your name"
-                    placeholderTextColor="#A0A59E"
+                    placeholderTextColor={THEME.dim}
                     returnKeyType="done"
                     style={styles.nameInput}
                     value={roomNameInput}
@@ -1291,7 +1478,6 @@ function Game() {
                 <PrimaryButton
                   label="HOST A ROOM  →"
                   disabled={!roomName}
-                  onPressIn={playTap}
                   onPress={createRoom}
                 />
                 <View style={styles.roomDivider}>
@@ -1305,7 +1491,7 @@ function Game() {
                     maxLength={6}
                     onChangeText={(value) => setRoomCodeInput(normalizeRoomCode(value))}
                     placeholder="Room code"
-                    placeholderTextColor="#A0A59E"
+                    placeholderTextColor={THEME.dim}
                     returnKeyType="join"
                     style={[styles.nameInput, roomCodeInput ? styles.codeInput : null]}
                     value={roomCodeInput}
@@ -1314,7 +1500,6 @@ function Game() {
                 <PrimaryButton
                   label="JOIN ROOM"
                   disabled={!roomName || !isValidRoomCode(roomCode)}
-                  onPressIn={playTap}
                   onPress={joinRoom}
                   secondary
                 />
@@ -1357,7 +1542,7 @@ function Game() {
           <Text style={styles.pageTitle}>Who’s in?</Text>
           <Text style={styles.pageCopy}>
             {room
-              ? 'Friends open LOWKEY, tap Private room, and join with this code. 3–10 people, you included.'
+              ? `Friends open ${BRAND.name}, tap Private room, and join with this code. 3–10 people, you included.`
               : 'Add 3–10 people. Tap an avatar to change it. Pass one phone around to deal missions.'}
           </Text>
 
@@ -1425,7 +1610,7 @@ function Game() {
                     )
                   }
                   placeholder={`Player ${index + 1}`}
-                  placeholderTextColor="#A0A59E"
+                  placeholderTextColor={THEME.dim}
                   returnKeyType="done"
                   style={styles.nameInput}
                   value={name}
@@ -1476,7 +1661,6 @@ function Game() {
                   accessibilityRole="button"
                   accessibilityState={{ selected: selectedMode === option.id }}
                   key={option.id}
-                  onPressIn={playTap}
                   onPress={() => {
                     haptic('select');
                     setSelectedMode(option.id);
@@ -1502,7 +1686,6 @@ function Game() {
                     accessibilityRole="button"
                     accessibilityState={{ selected: duration === minutes }}
                     key={minutes}
-                    onPressIn={playTap}
                     onPress={() => {
                       haptic('select');
                       setDuration(minutes);
@@ -1522,8 +1705,19 @@ function Game() {
           )}
 
           <View style={styles.optionBlock}>
-            <Eyebrow>MISSION PACKS</Eyebrow>
+            <Eyebrow>MISSION PACKS · {packs.length} OF {PACK_OPTIONS.length}</Eyebrow>
             <View style={styles.chipRow}>
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: packs.length === PACK_OPTIONS.length }}
+                onPress={() => {
+                  haptic('select');
+                  setPacks(packs.length === PACK_OPTIONS.length ? DEFAULT_SETUP.packs : PACK_OPTIONS.map((pack) => pack.id));
+                }}
+                style={[styles.setupChip, packs.length === PACK_OPTIONS.length && styles.setupChipSelected]}
+              >
+                <Text style={styles.setupChipText}>✨ ALL PACKS</Text>
+              </Pressable>
               {PACK_OPTIONS.map((pack) => {
                 const selected = packs.includes(pack.id);
                 return (
@@ -1533,13 +1727,15 @@ function Game() {
                     key={pack.id}
                     onPress={() => {
                       haptic('select');
-                      togglePack(pack.id);
+                          togglePack(pack.id);
                     }}
                     style={[styles.setupChip, selected && styles.setupChipSelected]}
                   >
-                    <Text style={styles.setupChipText}>
-                      {pack.emoji} {pack.title}
-                    </Text>
+                    <PopOnChange trigger={selected ? 'on' : 'off'}>
+                      <Text style={styles.setupChipText}>
+                        {pack.emoji} {pack.title}
+                      </Text>
+                    </PopOnChange>
                   </Pressable>
                 );
               })}
@@ -1588,50 +1784,28 @@ function Game() {
             <Text style={styles.modeCheck}>{doubleAgent && doubleAgentAllowed ? '●' : '○'}</Text>
           </Pressable>
 
-          <View style={styles.optionBlock}>
-            <Eyebrow>HOUSE MISSIONS · {customMissions.length}/{MAX_CUSTOM_MISSIONS}</Eyebrow>
-            <Text style={styles.modeDescription}>Write your own. Use @ for the target, e.g. “Get @ to moonwalk.”</Text>
-            <View style={[styles.nameInputRow, styles.customRow]}>
-              <TextInput
-                accessibilityLabel="New house mission"
-                maxLength={120}
-                onChangeText={setCustomDraft}
-                onSubmitEditing={addCustomMission}
-                placeholder="Get @ to…"
-                placeholderTextColor="#A0A59E"
-                returnKeyType="done"
-                style={styles.nameInput}
-                value={customDraft}
-              />
-              <Pressable
-                accessibilityRole="button"
-                disabled={!customDraft.trim() || customMissions.length >= MAX_CUSTOM_MISSIONS}
-                onPress={addCustomMission}
-                style={styles.customAdd}
-              >
-                <Text style={styles.addPlayerText}>ADD</Text>
-              </Pressable>
+          <PartyTile
+            accessibilityLabel="Open the mission library"
+            onPress={() => openLibrary('setup')}
+            style={styles.optionBlock}
+            tone="pink"
+          >
+            <View style={styles.libraryTile}>
+              <Text style={styles.tileEmoji}>📚</Text>
+              <View style={styles.modeCopy}>
+                <Text style={styles.tileTitle}>MISSION LIBRARY</Text>
+                <Text style={styles.tileSub}>
+                  {library.filter((template) => packs.includes(template.pack)).length} missions in your packs
+                  {customMissions.length ? ` + ${customMissions.length} of your own` : ''} · view, edit or add
+                </Text>
+              </View>
+              <Text style={styles.tileArrow}>›</Text>
             </View>
-            {customMissions.map((mission, index) => (
-              <Entrance index={0} key={mission} style={styles.customItem}>
-                <Text style={styles.customText}>{mission}</Text>
-                <Pressable
-                  accessibilityLabel={`Remove house mission ${index + 1}`}
-                  accessibilityRole="button"
-                  hitSlop={10}
-                  onPress={() => setCustomMissions((current) => current.filter((entry) => entry !== mission))}
-                  style={styles.removeButton}
-                >
-                  <Text style={styles.removeButtonText}>×</Text>
-                </Pressable>
-              </Entrance>
-            ))}
-          </View>
+          </PartyTile>
 
           <PrimaryButton
             label="DEAL THE MISSIONS  →"
             disabled={!canStart}
-            onPressIn={playTap}
             onPress={startDealing}
           />
           <Pressable onPress={() => (room ? closeRoom() : setStage('home'))} style={styles.backLink}>
@@ -1669,7 +1843,6 @@ function Game() {
                 <PrimaryButton
                   label={missionVisible ? 'GOT IT  ✓' : 'HOLD THE CARD FIRST'}
                   disabled={!missionVisible}
-                  onPressIn={playTap}
                   onPress={finishDealing}
                 />
               )}
@@ -1692,11 +1865,10 @@ function Game() {
           <PrimaryButton
             label="START THE CHAOS  →"
             disabled={!everyoneReady(players, hostRoom.readyNames)}
-            onPressIn={playTap}
             onPress={startTimer}
           />
           {!everyoneReady(players, hostRoom.readyNames) && (
-            <Pressable onPressIn={playTap} onPress={startTimer} style={styles.backLink}>
+            <Pressable onPress={startTimer} style={styles.backLink}>
               <Text style={styles.backLinkText}>START WITHOUT WAITING</Text>
             </Pressable>
           )}
@@ -1742,7 +1914,6 @@ function Game() {
           <PrimaryButton
             label={missionVisible ? 'GOT IT · PASS IT ON  →' : 'HOLD THE CARD TO SEE IT'}
             disabled={!missionVisible}
-            onPressIn={playTap}
             onPress={finishDealing}
           />
           </ScrollView>
@@ -1751,7 +1922,9 @@ function Game() {
 
       {stage === 'ready' && (
         <ScrollView contentContainerStyle={styles.centerPage}>
-          <Text style={styles.bigEmoji}>🔐</Text>
+          <PopIn>
+            <Text style={styles.bigEmoji}>🔐</Text>
+          </PopIn>
           <Eyebrow>ALL MISSIONS ARE SEALED</Eyebrow>
           <Text style={styles.pageTitle}>Phone back in the middle.</Text>
           <Text style={styles.pageCopy}>
@@ -1782,7 +1955,7 @@ function Game() {
             ))}
           </View>
           <Text style={styles.voteHint}>Think someone’s working on you? Hit “Call it out” during the round.</Text>
-          <PrimaryButton label="START THE CHAOS  →" onPressIn={playTap} onPress={startTimer} />
+          <PrimaryButton label="START THE CHAOS  →" onPress={startTimer} />
         </ScrollView>
       )}
 
@@ -1818,7 +1991,6 @@ function Game() {
               </Text>
               <PrimaryButton
                 label="SEE MY NEW MISSION"
-                onPressIn={playTap}
                 onPress={() =>
                   openSheet({
                     kind: 'peek',
@@ -1843,48 +2015,47 @@ function Game() {
             </View>
           )}
           <View style={styles.playButtons}>
-            <PrimaryButton label="🚨  CALL IT OUT" onPressIn={playTap} onPress={() => openSheet({ kind: 'callout' })} />
+            <PrimaryButton label="🚨  CALL IT OUT" onPress={() => openSheet({ kind: 'callout' })} />
             <PrimaryButton
               label={pastHalfway ? '💡  HINT / PEEK MY MISSION' : '🤫  PEEK MY MISSION'}
-              onPressIn={playTap}
               onPress={() => openSheet({ kind: 'peek', names: room ? [room.hostName] : null })}
               secondary
             />
           </View>
           <View style={styles.playingTip}>
             <Text style={styles.tipMark}>✳</Text>
-            <Text style={styles.tipText}>
-              {secondsLeft <= 10
-                ? 'Final seconds. This is absolutely fine. Act normal.'
-                : pastHalfway
-                  ? 'Hints are open. Stuck? Peek for one.'
-                  : 'If they ask why, don’t tell them why.'}
-            </Text>
+            {secondsLeft <= 10 ? (
+              <Text style={styles.tipText}>Final seconds. This is absolutely fine. Act normal.</Text>
+            ) : (
+              <View style={styles.tipRotator}>
+                <RotatingText intervalMs={7000} lines={pastHalfway ? HALFWAY_TIPS : PLAYING_TIPS} style={styles.tipText} />
+              </View>
+            )}
           </View>
-          <PrimaryButton label="END GAME & REVEAL" onPressIn={playTap} onPress={finishEarly} secondary />
+          <PrimaryButton label="END GAME & REVEAL" onPress={finishEarly} secondary />
         </ScrollView>
       )}
 
       {stage === 'reveal' && (
         !revealReady ? (
           <View style={styles.suspenseScreen}>
-            <Text style={styles.suspenseSiren}>🚨</Text>
+            <Wobble>
+              <Text style={styles.suspenseSiren}>🚨</Text>
+            </Wobble>
             <Eyebrow>MISSION REVEAL</Eyebrow>
             <Text style={styles.suspenseTitle}>Everybody act innocent.</Text>
             <Text style={styles.suspenseCopy}>{commentary}</Text>
-            <View style={styles.suspenseLights}>
-              <View style={[styles.suspenseLight, styles.suspenseLightOne]} />
-              <View style={[styles.suspenseLight, styles.suspenseLightTwo]} />
-              <View style={[styles.suspenseLight, styles.suspenseLightThree]} />
-            </View>
+            <SuspenseLights color={COLORS.orange} />
           </View>
         ) : (
           <GestureScrollView contentContainerStyle={styles.pageContent}>
             <Entrance style={[styles.revealBanner, roundIsTie && styles.tieBanner]}>
               {/* Stay neutral until the group has voted on every mission. */}
-              <Text style={styles.revealEmoji}>
-                {!allMissionsVoted ? '🗳️' : roundIsTie ? '🤝' : completedPlayers.length ? '🎉' : '🫠'}
-              </Text>
+              <PopOnChange trigger={!allMissionsVoted ? 'vote' : roundIsTie ? 'tie' : completedPlayers.length ? 'win' : 'fail'}>
+                <Text style={styles.revealEmoji}>
+                  {!allMissionsVoted ? '🗳️' : roundIsTie ? '🤝' : completedPlayers.length ? '🎉' : '🫠'}
+                </Text>
+              </PopOnChange>
               <Eyebrow>{roundIsTie ? 'EVERYBODY GOT CAUGHT' : 'THE SECRET’S OUT'}</Eyebrow>
               <Text style={styles.pageTitle}>
                 {!allMissionsVoted
@@ -1954,7 +2125,6 @@ function Game() {
                               accessibilityRole="button"
                               accessibilityLabel={`${player.name} did it`}
                               disabled={!votable}
-                              onPressIn={playTap}
                               onPress={() => setMissionOutcome(player.name, true)}
                               style={[styles.outcomeButton, styles.successButton]}
                             >
@@ -1964,7 +2134,6 @@ function Game() {
                               accessibilityRole="button"
                               accessibilityLabel={`${player.name} did not do it`}
                               disabled={!votable}
-                              onPressIn={playTap}
                               onPress={() => setMissionOutcome(player.name, false)}
                               style={[styles.outcomeButton, styles.missedButton]}
                             >
@@ -2014,7 +2183,6 @@ function Game() {
                           accessibilityRole="button"
                           accessibilityLabel={`${kind} reaction for ${player.name}`}
                           key={kind}
-                          onPressIn={playTap}
                           onPress={() => sendReaction(kind, player.name)}
                           style={styles.reactionButton}
                         >
@@ -2041,6 +2209,7 @@ function Game() {
                           key={player.name}
                           onPress={() => {
                             haptic(selected ? 'select' : 'success');
+                            if (!selected) play('land');
                             setCreativeName(selected ? null : player.name);
                           }}
                           style={[styles.setupChip, selected && styles.setupChipSelected]}
@@ -2060,7 +2229,7 @@ function Game() {
                 <Leaderboard entries={sessionLeaderboard(false)} />
               </View>
             )}
-            <PrimaryButton label="MAKE A SHARE CARD  ↗" onPressIn={playTap} onPress={() => setStage('share')} />
+            <PrimaryButton label="📣  SHARE THE RESULTS" onPress={() => setStage('share')} />
             {/* A rematch or wrap-up before every vote is in would drop this round from the scores. */}
             {!allMissionsVoted && (
               <Text style={styles.voteHint}>Vote on every mission to rematch or wrap the session.</Text>
@@ -2068,21 +2237,19 @@ function Game() {
             <PrimaryButton
               label="REMATCH · RUN IT BACK"
               disabled={!allMissionsVoted}
-              onPressIn={playTap}
               onPress={rematch}
               secondary
             />
             {roundsPlayed > 0 && allMissionsVoted && (
               <Pressable
                 accessibilityRole="button"
-                onPressIn={playTap}
                 onPress={wrapSession}
                 style={styles.backLink}
               >
                 <Text style={styles.backLinkText}>WRAP THE SESSION</Text>
               </Pressable>
             )}
-            <Pressable onPressIn={playTap} onPress={startFreshSession} style={styles.backLink}>
+            <Pressable onPress={startFreshSession} style={styles.backLink}>
               <Text style={styles.backLinkText}>CHANGE PLAYERS OR MODE</Text>
             </Pressable>
           </GestureScrollView>
@@ -2135,7 +2302,7 @@ function Game() {
                         {candidate.avatar} {candidate.name.toUpperCase()} · ROUND {candidate.round}
                       </Text>
                       <Text style={styles.historyDetail}>{candidate.mission}</Text>
-                      {crowned && <Stamp color={COLORS.ink} text="👑 MISSION OF THE NIGHT" />}
+                      {crowned && <Stamp color={THEME.yellow} text="👑 MISSION OF THE NIGHT" />}
                     </Pressable>
                   </Entrance>
                 );
@@ -2158,9 +2325,9 @@ function Game() {
               </View>
             ))}
           </View>
-          <PrimaryButton label="REMATCH · SAME GROUP" onPressIn={playTap} onPress={rematch} />
-          <PrimaryButton label="MAKE A SHARE CARD  ↗" onPressIn={playTap} onPress={() => setStage('share')} secondary />
-          <Pressable onPressIn={playTap} onPress={startFreshSession} style={styles.backLink}>
+          <PrimaryButton label="REMATCH · SAME GROUP" onPress={rematch} />
+          <PrimaryButton label="📣  SHARE THE RESULTS" onPress={() => setStage('share')} secondary />
+          <Pressable onPress={startFreshSession} style={styles.backLink}>
             <Text style={styles.backLinkText}>START A NEW SESSION</Text>
           </Pressable>
         </ScrollView>
@@ -2173,12 +2340,12 @@ function Game() {
           <Text style={styles.pageCopy}>Share this vertical reveal card to your socials or group chat.</Text>
           <View ref={shareCardRef} collapsable={false} style={styles.shareCard}>
             <View style={styles.shareCardTop}>
-              <Text style={styles.shareLogo}>LOWKEY</Text>
-              <Text style={styles.shareTag}>DO IT. DON’T GET CAUGHT.</Text>
+              <Text style={styles.shareLogo}>{BRAND.name}</Text>
+              <Text style={styles.shareTag}>{BRAND.tagline.toUpperCase()}</Text>
             </View>
             <View style={styles.shareContent}>
               <Text style={styles.shareSiren}>🚨</Text>
-              <Text style={styles.shareHeading}>WE PLAYED{'\n'}LOWKEY</Text>
+              <Text style={styles.shareHeading}>WE PLAYED{'\n'}{BRAND.name}</Text>
               <Text style={styles.shareSmallLabel}>
                 {MODE_OPTIONS.find((mode) => mode.id === roundMode)?.title} · THE MISSION REVEAL
                 {chaosEvent ? ` · ${chaosEvent.name}` : ''}
@@ -2202,17 +2369,12 @@ function Game() {
             </View>
             <View style={styles.shareCardBottom}>
               <Text style={styles.shareFooter}>WHO WAS THE MOST SUSPICIOUS?</Text>
-              <Text style={styles.shareHashtag}>#LOWKEYGAME</Text>
+              <Text style={styles.shareHashtag}>{BRAND.hashtag}</Text>
+              <Text style={styles.shareCredit}>{BRAND.credit.toUpperCase()}</Text>
             </View>
           </View>
-          <PrimaryButton label="SHARE REVEAL CARD  ↗" onPressIn={playTap} onPress={shareResults} />
-          <PrimaryButton label="BACK TO REVEAL" onPressIn={playTap} onPress={() => setStage('reveal')} secondary />
-          <Pressable
-            onPress={() => Share.share({ message: shareMessage })}
-            style={styles.backLink}
-          >
-            <Text style={styles.backLinkText}>SHARE AS TEXT INSTEAD</Text>
-          </Pressable>
+          <PrimaryButton label="📣  SHARE" onPress={() => setShareOpen(true)} />
+          <PrimaryButton label="←  BACK TO RESULTS" onPress={() => setStage('reveal')} secondary />
         </ScrollView>
       )}
       </Animated.View>
@@ -2243,6 +2405,10 @@ function Game() {
           />
         )}
       </Sheet>
+      {stage === 'playing' && kickoffRound === roundId && <Kickoff onDone={() => setKickoffRound(0)} />}
+      <Sheet onClose={() => setShareOpen(false)} visible={stage === 'share' && shareOpen}>
+        <ShareOptions message={shareMessage} onShareImage={shareImage} />
+      </Sheet>
       <BustedOverlay event={bust} onDone={() => setBust(null)} />
       {activeNotice && (
         <Toast key={`${activeNotice.name}-${activeNotice.badge.id}`} onDone={() => setBadgeNotices((queue) => queue.slice(1))}>
@@ -2256,392 +2422,442 @@ function Game() {
   );
 }
 
+// Every value below comes from the theme (src/theme.ts), so the whole game
+// shares one look: deep violet "party night", bright party colours, Baloo 2.
+const card = {
+  backgroundColor: THEME.surface,
+  borderRadius: RADIUS.lg,
+  borderWidth: 1,
+  borderColor: THEME.line,
+  padding: 17,
+} as const;
+
 const styles = StyleSheet.create({
+  // ---- frame
   root: { flex: 1 },
-  webRoot: { backgroundColor: '#E2E0D5' },
+  rootBackground: { backgroundColor: THEME.bg },
   webColumn: { width: '100%', maxWidth: 520, alignSelf: 'center', overflow: 'hidden' },
-  app: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    paddingTop: 14,
-  },
-  topBar: {
-    height: 56,
-    paddingHorizontal: 22,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  app: { flex: 1, backgroundColor: 'transparent', paddingTop: 8 },
   screen: { flex: 1 },
-  soundToggle: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+  topBar: { height: 58, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  brand: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerBack: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 'auto',
     marginRight: 10,
   },
-  soundToggleText: { color: COLORS.ink, fontSize: 18, fontWeight: '900' },
-  confettiLayer: {
-    ...StyleSheet.absoluteFill,
-    overflow: 'hidden',
-  },
-  confettiPiece: {
-    position: 'absolute',
-    top: 50,
-    fontSize: 23,
-    fontWeight: '900',
-  },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerBackText: { color: THEME.text, fontFamily: FONTS.black, fontSize: 22, lineHeight: 28 },
   brandMark: {
-    width: 29,
-    height: 29,
-    borderRadius: 9,
-    backgroundColor: COLORS.green,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: THEME.yellow,
+    borderBottomWidth: 4,
+    borderBottomColor: THEME.yellowEdge,
     alignItems: 'center',
     justifyContent: 'center',
     transform: [{ rotate: '-8deg' }],
   },
-  brandMarkText: { color: COLORS.ink, fontSize: 19, fontWeight: '900' },
-  brandName: { color: COLORS.ink, fontSize: 16, fontWeight: '900', letterSpacing: 1.6 },
-  topTag: { flexShrink: 1, color: COLORS.muted, fontSize: 8, fontWeight: '800', letterSpacing: 0.8 },
-  homeContent: { paddingHorizontal: 22, paddingTop: 16, paddingBottom: 30 },
-  hero: {
-    minHeight: 310,
-    borderRadius: 26,
-    backgroundColor: COLORS.green,
-    padding: 25,
-    // Leaves room for the mascot and speech bubble so they never cover the copy.
-    paddingBottom: 120,
-    marginBottom: 18,
-    overflow: 'hidden',
+  brandMarkText: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 21, lineHeight: 28 },
+  brandName: { color: THEME.text, fontFamily: FONTS.black, fontSize: 21, letterSpacing: 1 },
+  soundToggle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  heroSticker: {
+  soundToggleText: { fontSize: 18 },
+  confettiLayer: { ...StyleSheet.absoluteFill, overflow: 'hidden' },
+  confettiPiece: { position: 'absolute', top: 50, fontSize: 26, fontFamily: FONTS.black },
+
+  // ---- shared page pieces
+  pageContent: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 40 },
+  centerPage: { flexGrow: 1, paddingHorizontal: 22, paddingVertical: 22, justifyContent: 'center', alignItems: 'center' },
+  pageTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 34, lineHeight: 40, marginTop: 6 },
+  pageCopy: { color: THEME.muted, fontFamily: FONTS.medium, fontSize: 15, lineHeight: 22, marginTop: 6 },
+  bigEmoji: { fontSize: 66, marginBottom: 10 },
+  backLink: { alignItems: 'center', paddingVertical: 18 },
+  backLinkText: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 13, letterSpacing: 1.2 },
+  voteHint: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13, textAlign: 'center', marginTop: 12 },
+  validationText: { color: THEME.bad, fontFamily: FONTS.bold, fontSize: 14, marginTop: 8 },
+  sectionTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 18, letterSpacing: 1, marginTop: 26, marginBottom: 2 },
+  sectionTitleInCard: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 14, letterSpacing: 1.4, marginBottom: 4 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  setupChip: {
+    backgroundColor: THEME.surface,
+    borderWidth: 2,
+    borderColor: THEME.lineStrong,
+    borderRadius: RADIUS.pill,
+    paddingHorizontal: 14,
+    minHeight: 42,
+    justifyContent: 'center',
+  },
+  setupChipSelected: { backgroundColor: THEME.violet, borderColor: THEME.yellow },
+  setupChipText: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 13, letterSpacing: 0.4 },
+  toastTitle: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 15 },
+  toastCopy: { color: THEME.onAccent, fontFamily: FONTS.semi, fontSize: 12, marginTop: 2, opacity: 0.8 },
+
+  // ---- home
+  homeContent: { paddingHorizontal: 20, paddingTop: 6, paddingBottom: 40 },
+  hero: { borderRadius: 30, padding: 22, paddingTop: 20, marginBottom: 8, overflow: 'hidden', minHeight: 300 },
+  heroStickers: { position: 'absolute', right: 14, top: 10, alignItems: 'flex-end' },
+  stickerBig: { fontSize: 64 },
+  stickerSmall: { fontSize: 34, marginRight: 46, marginTop: -6 },
+  heroKicker: {
     alignSelf: 'flex-start',
-    backgroundColor: COLORS.ink,
-    borderRadius: 20,
+    color: THEME.text,
+    backgroundColor: 'rgba(19,7,51,0.35)',
+    borderRadius: RADIUS.pill,
+    overflow: 'hidden',
     paddingHorizontal: 12,
+    paddingVertical: 4,
+    fontFamily: FONTS.black,
+    fontSize: 11,
+    letterSpacing: 1.4,
+  },
+  heroTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 46, lineHeight: 48, marginTop: 18 },
+  heroTitleAccent: { color: THEME.yellow },
+  heroCopy: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 16, lineHeight: 22, marginTop: 10, maxWidth: 290, opacity: 0.95 },
+  teaser: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 8,
+    backgroundColor: THEME.text,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    marginBottom: 19,
+    marginTop: 18,
     transform: [{ rotate: '-2deg' }],
   },
-  stickerText: { color: '#FFFFFF', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
-  heroTitle: { color: COLORS.ink, fontSize: 45, fontWeight: '900', lineHeight: 48, letterSpacing: -2 },
-  heroCopy: { color: '#3C4937', fontSize: 14, lineHeight: 20, marginTop: 12, maxWidth: 245 },
-  heroDoodle: { position: 'absolute', right: 20, bottom: 24, alignItems: 'center' },
-  doodleText: { fontSize: 51, transform: [{ rotate: '10deg' }] },
-  doodleBubble: {
-    position: 'absolute',
-    right: 42,
-    bottom: 52,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 12,
-    transform: [{ rotate: '-6deg' }],
+  teaserEmoji: { fontSize: 20 },
+  teaserText: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 15 },
+  tileRow: { flexDirection: 'row', gap: 12, marginTop: 6 },
+  tile: { flex: 1, marginTop: 10 },
+  tileEmoji: { fontSize: 30 },
+  tileTitle: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 16, letterSpacing: 0.6, marginTop: 4 },
+  tileSub: { color: THEME.onAccent, fontFamily: FONTS.semi, fontSize: 12, opacity: 0.75 },
+  tileArrow: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 34 },
+  libraryTile: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  vibeRow: { gap: 10, paddingRight: 20, paddingBottom: 4 },
+  vibe: { width: 120, marginTop: 10 },
+  vibeEmoji: { fontSize: 32 },
+  vibeTitle: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 13, marginTop: 6 },
+  vibeCount: { color: THEME.onAccent, fontFamily: FONTS.semi, fontSize: 11, opacity: 0.75 },
+  howCard: { ...card, marginTop: 24 },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  stepBadge: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  stepEmoji: { fontSize: 20 },
+  stepText: { flex: 1, color: THEME.text, fontFamily: FONTS.semi, fontSize: 15, lineHeight: 20 },
+  homeNote: { textAlign: 'center', color: THEME.dim, fontFamily: FONTS.bold, fontSize: 11, letterSpacing: 1, marginTop: 22 },
+  credit: { textAlign: 'center', color: THEME.yellow, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 2, marginTop: 8 },
+
+  // ---- hall of fame
+  fameCard: { ...card, marginTop: 14 },
+  fameTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  fameAvatar: { fontSize: 42 },
+  fameName: { color: THEME.text, fontFamily: FONTS.black, fontSize: 21 },
+  fameStats: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 12, lineHeight: 17 },
+  badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+  badge: {
+    width: '31%',
+    flexGrow: 1,
+    backgroundColor: THEME.surfaceHi,
+    borderRadius: RADIUS.sm,
+    borderWidth: 2,
+    borderColor: THEME.yellow,
+    padding: 9,
+    alignItems: 'center',
   },
-  bubbleText: { fontSize: 9, fontWeight: '800', color: COLORS.ink },
-  howCard: { marginTop: 24, backgroundColor: COLORS.card, borderRadius: 21, padding: 20 },
-  stepRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: COLORS.line },
-  lastStep: { borderBottomWidth: 0, paddingBottom: 1 },
-  stepNumber: { color: '#9BC94C', width: 38, fontSize: 12, fontWeight: '900' },
-  stepText: { flex: 1, color: COLORS.ink, fontSize: 12, fontWeight: '700' },
-  homeNote: { textAlign: 'center', color: COLORS.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1, marginTop: 20 },
-  pageContent: { paddingHorizontal: 22, paddingTop: 26, paddingBottom: 34 },
-  pageTitle: { color: COLORS.ink, fontSize: 34, lineHeight: 40, fontWeight: '900', letterSpacing: -1.1, marginTop: 8 },
-  pageCopy: { color: COLORS.muted, fontSize: 14, lineHeight: 21, marginTop: 8 },
-  nameList: { marginTop: 24, gap: 9 },
+  badgeLocked: { backgroundColor: THEME.surfaceLo, borderColor: THEME.line },
+  badgeEmoji: { fontSize: 24 },
+  badgeName: { color: THEME.text, fontFamily: FONTS.black, fontSize: 9, letterSpacing: 0.5, marginTop: 4, textAlign: 'center' },
+  badgeHint: { color: THEME.muted, fontFamily: FONTS.medium, fontSize: 9, lineHeight: 12, marginTop: 2, textAlign: 'center' },
+
+  // ---- rooms
+  roomCard: { ...card, marginTop: 16, marginBottom: 6 },
+  roomCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  roomCardCopy: { color: THEME.text, fontFamily: FONTS.medium, fontSize: 14, lineHeight: 20, marginTop: 6 },
+  roomCode: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 62, letterSpacing: 12, marginVertical: 4 },
+  roomStatus: { color: THEME.good, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 1 },
+  roomStatusBad: { color: THEME.bad },
+  roomMember: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 16, paddingTop: 10 },
+  roomInput: { marginTop: 20, marginBottom: 4 },
+  roomDivider: { alignItems: 'center', marginTop: 26, marginBottom: 10 },
+  roomDividerText: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 1.4 },
+  codeInput: { letterSpacing: 8, fontSize: 22, fontFamily: FONTS.black },
+
+  // ---- setup
+  nameList: { marginTop: 20, gap: 10 },
   nameInputRow: {
-    height: 57,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.line,
-    borderRadius: 16,
-    paddingHorizontal: 15,
+    minHeight: 60,
+    backgroundColor: THEME.surface,
+    borderWidth: 2,
+    borderColor: THEME.line,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  nameIndex: { width: 33, color: '#A0A59E', fontSize: 10, fontWeight: '900' },
-  nameInput: { flex: 1, height: '100%', color: COLORS.ink, fontSize: 15, fontWeight: '700' },
-  removeButton: { width: 30, height: 40, alignItems: 'flex-end', justifyContent: 'center' },
-  removeButtonText: { color: COLORS.muted, fontSize: 25, fontWeight: '300' },
+  nameInput: { flex: 1, minHeight: 56, color: THEME.text, fontFamily: FONTS.bold, fontSize: 17 },
+  removeButton: { width: 34, height: 44, alignItems: 'center', justifyContent: 'center' },
+  removeButtonText: { color: THEME.muted, fontSize: 26 },
   addPlayer: { alignSelf: 'flex-start', paddingVertical: 14, paddingRight: 12 },
-  addPlayerText: { color: COLORS.ink, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
-  validationText: { color: '#BA4938', fontSize: 12, fontWeight: '700', marginTop: 4 },
-  durationBlock: { marginTop: 20, marginBottom: 17 },
-  durationOptions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  addPlayerText: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 14, letterSpacing: 1 },
   modeBlock: { marginTop: 24 },
-  modeList: { gap: 9, marginTop: 12 },
+  modeList: { gap: 10, marginTop: 10 },
   modeOption: {
-    backgroundColor: COLORS.card,
-    borderColor: COLORS.line,
-    borderWidth: 1,
-    borderRadius: 16,
-    minHeight: 68,
+    backgroundColor: THEME.surface,
+    borderColor: THEME.line,
+    borderWidth: 2,
+    borderRadius: RADIUS.lg,
+    minHeight: 74,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  modeSelected: { borderColor: COLORS.ink, backgroundColor: '#F0F5E5' },
-  modeEmoji: { fontSize: 25 },
+  modeSelected: { borderColor: THEME.yellow, backgroundColor: THEME.surfaceHi },
+  modeEmoji: { fontSize: 30 },
   modeCopy: { flex: 1 },
-  modeTitle: { color: COLORS.ink, fontSize: 11, fontWeight: '900', letterSpacing: 0.6 },
-  modeDescription: { color: COLORS.muted, fontSize: 10, lineHeight: 14, marginTop: 4 },
-  modeCheck: { color: COLORS.ink, fontSize: 17, fontWeight: '900' },
+  modeTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 16, letterSpacing: 0.5 },
+  modeDescription: { color: THEME.muted, fontFamily: FONTS.medium, fontSize: 13, lineHeight: 17 },
+  modeCheck: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 20 },
+  durationBlock: { marginTop: 22 },
+  durationOptions: { flexDirection: 'row', gap: 10, marginTop: 10 },
   durationOption: {
-    width: 76,
-    height: 65,
-    borderRadius: 15,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.line,
+    flex: 1,
+    height: 66,
+    borderRadius: RADIUS.md,
+    backgroundColor: THEME.surface,
+    borderWidth: 2,
+    borderColor: THEME.line,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
   },
-  durationSelected: { backgroundColor: COLORS.green, borderColor: COLORS.green },
-  durationNumber: { color: COLORS.ink, fontSize: 22, fontWeight: '900' },
-  durationNumberSelected: { color: COLORS.ink },
-  durationUnit: { color: COLORS.muted, fontSize: 8, fontWeight: '900', marginTop: 5 },
-  backLink: { alignItems: 'center', paddingVertical: 18 },
-  backLinkText: { color: COLORS.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1 },
-  centerPage: { flexGrow: 1, paddingHorizontal: 24, paddingVertical: 24, justifyContent: 'center', alignItems: 'center' },
-  progressHeader: { paddingHorizontal: 24, paddingTop: 22 },
-  progressTrack: { height: 5, backgroundColor: '#E4E3D9', borderRadius: 5, marginTop: 11 },
-  progressFill: { height: 5, backgroundColor: '#9BC94C', borderRadius: 5 },
-  phoneHandoff: { alignItems: 'center', marginBottom: 25 },
-  privateNudge: { color: '#78816F', fontSize: 11, fontWeight: '800', textAlign: 'center', marginTop: 12 },
-  handoffEmoji: { fontSize: 43, marginBottom: 13 },
-  handoffTitle: { color: COLORS.muted, fontSize: 14, fontWeight: '700' },
-  handoffName: { color: COLORS.ink, fontSize: 38, fontWeight: '900', letterSpacing: -1, marginTop: 3, textAlign: 'center' },
-  missionCard: {
-    width: '100%',
-    backgroundColor: COLORS.green,
-    padding: 21,
-    borderRadius: 21,
-    marginBottom: 10,
-  },
-  missionText: { color: COLORS.ink, fontSize: 24, lineHeight: 30, fontWeight: '900', marginTop: 17 },
-  missionHint: { color: '#536048', fontSize: 12, lineHeight: 18, marginTop: 9, marginBottom: 13 },
-  bigEmoji: { fontSize: 57, marginBottom: 21 },
-  readyPlayerList: {
-    width: '100%',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
-    marginVertical: 25,
-  },
+  durationSelected: { backgroundColor: THEME.yellow, borderColor: THEME.yellow },
+  durationNumber: { color: THEME.text, fontFamily: FONTS.black, fontSize: 26 },
+  durationNumberSelected: { color: THEME.onAccent },
+  durationUnit: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 11, marginTop: 6 },
+  optionBlock: { marginTop: 22 },
+  segment: { flexDirection: 'row', backgroundColor: THEME.surfaceLo, borderRadius: RADIUS.md, padding: 4, marginTop: 10 },
+  segmentOption: { flex: 1, minHeight: 44, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
+  segmentSelected: { backgroundColor: THEME.violet },
+  segmentText: { color: THEME.text, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 0.6 },
+
+  // ---- dealing
+  progressHeader: { paddingHorizontal: 22, paddingTop: 14 },
+  progressTrack: { height: 10, backgroundColor: THEME.surfaceLo, borderRadius: 5, marginTop: 10, overflow: 'hidden' },
+  progressFill: { height: 10, backgroundColor: THEME.lime, borderRadius: 5 },
+  phoneHandoff: { alignItems: 'center', marginBottom: 20 },
+  handoffEmoji: { fontSize: 60, marginBottom: 4 },
+  handoffTitle: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 16 },
+  handoffName: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 44, lineHeight: 50, textAlign: 'center' },
+  privateNudge: { color: THEME.cyan, fontFamily: FONTS.bold, fontSize: 14, textAlign: 'center', marginTop: 8 },
+  dealCard: { minHeight: 210 },
+  readyNote: { color: THEME.good, fontFamily: FONTS.bold, fontSize: 14, textAlign: 'center', marginVertical: 8 },
+  agentNotice: { color: THEME.pink, fontFamily: FONTS.black, fontSize: 15, textAlign: 'center', marginTop: 12 },
+  readyPlayerList: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginVertical: 22 },
   readyPlayer: {
-    color: COLORS.ink,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    color: THEME.text,
+    backgroundColor: THEME.surface,
+    borderWidth: 1,
+    borderColor: THEME.line,
+    borderRadius: RADIUS.pill,
     overflow: 'hidden',
-    paddingHorizontal: 13,
-    paddingVertical: 9,
-    fontSize: 11,
-    fontWeight: '800',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    fontFamily: FONTS.bold,
+    fontSize: 14,
   },
+  modeBadge: { backgroundColor: THEME.violet, borderRadius: RADIUS.pill, paddingHorizontal: 16, paddingVertical: 6, marginTop: 16 },
+  modeBadgeText: { color: THEME.text, fontFamily: FONTS.black, fontSize: 13, letterSpacing: 1 },
+
+  // ---- playing
   livePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E9E8DF',
-    paddingHorizontal: 13,
-    paddingVertical: 9,
-    borderRadius: 20,
-    marginBottom: 22,
-  },
-  liveDot: { width: 7, height: 7, borderRadius: 5, backgroundColor: '#75B831', marginRight: 7 },
-  liveText: { color: COLORS.ink, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  modeBadge: { backgroundColor: '#FFFFFF', borderRadius: 18, paddingHorizontal: 15, paddingVertical: 9, marginTop: 20 },
-  modeBadgeText: { color: COLORS.ink, fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
-  chaosEventCard: { width: '100%', backgroundColor: COLORS.green, borderRadius: 17, padding: 15, marginTop: 12 },
-  chaosEventName: { color: COLORS.ink, fontSize: 16, fontWeight: '900', marginTop: 8 },
-  chaosEventRule: { color: COLORS.ink, fontSize: 12, lineHeight: 17, fontWeight: '800', marginTop: 6 },
-  chaosEventDetail: { color: '#536048', fontSize: 10, lineHeight: 14, marginTop: 6 },
-  timerLabel: { color: COLORS.muted, fontSize: 10, fontWeight: '900', letterSpacing: 2 },
-  timer: { color: COLORS.ink, fontSize: 58, fontWeight: '900', letterSpacing: -2.5, marginTop: 1, fontVariant: ['tabular-nums'] },
-  timerUrgent: { color: '#CF553F' },
-  suddenDeathLabel: { color: '#BA4938', fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginTop: 4 },
-  playingHeadline: { color: COLORS.ink, fontSize: 26, fontWeight: '900', marginTop: 15 },
-  playingTip: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 15,
-    padding: 15,
-    marginTop: 30,
-    marginBottom: 24,
-    alignItems: 'center',
-  },
-  activeEvent: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 15, padding: 14, marginTop: 17 },
-  activeEventUrgent: { backgroundColor: '#FBE8DF' },
-  activeEventTitle: { color: COLORS.ink, fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
-  activeEventText: { color: COLORS.muted, fontSize: 10, lineHeight: 15, marginTop: 5 },
-  tipMark: { color: '#85AD39', fontSize: 18, marginRight: 10 },
-  tipText: { color: COLORS.ink, fontSize: 12, fontWeight: '700', flex: 1 },
-  revealBanner: {
-    backgroundColor: COLORS.green,
-    borderRadius: 23,
-    padding: 21,
+    backgroundColor: 'rgba(71,229,143,0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: RADIUS.pill,
     marginBottom: 18,
   },
-  tieBanner: { backgroundColor: '#E8DFFF' },
-  revealEmoji: { fontSize: 30, marginBottom: 11 },
-  comedyLine: { color: COLORS.ink, fontSize: 16, lineHeight: 22, fontWeight: '900', marginTop: 13 },
-  revealEventNote: { color: '#536048', fontSize: 10, fontWeight: '900', marginTop: 14 },
-  suspenseScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34 },
-  suspenseSiren: { fontSize: 60, marginBottom: 24 },
-  suspenseTitle: { color: COLORS.ink, fontSize: 30, lineHeight: 36, fontWeight: '900', textAlign: 'center', marginTop: 13 },
-  suspenseCopy: { color: COLORS.muted, fontSize: 14, fontWeight: '700', textAlign: 'center', marginTop: 12 },
-  suspenseLights: { flexDirection: 'row', gap: 10, marginTop: 32 },
-  suspenseLight: { width: 10, height: 10, borderRadius: 10, backgroundColor: COLORS.orange },
-  suspenseLightOne: { opacity: 0.45 },
-  suspenseLightTwo: { opacity: 0.7 },
-  suspenseLightThree: { opacity: 1 },
+  liveDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: THEME.good, marginRight: 8 },
+  liveText: { color: THEME.good, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 1.2 },
+  timerLabel: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 2 },
+  timer: { color: THEME.text, fontFamily: FONTS.black, fontSize: 58, lineHeight: 66, fontVariant: ['tabular-nums'] },
+  timerUrgent: { color: THEME.bad },
+  suddenDeathLabel: { color: THEME.pink, fontFamily: FONTS.black, fontSize: 13, letterSpacing: 1, marginTop: 8 },
+  playingHeadline: { color: THEME.text, fontFamily: FONTS.black, fontSize: 30, marginTop: 12 },
+  activeEvent: {
+    width: '100%',
+    backgroundColor: THEME.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 2,
+    borderColor: THEME.yellow,
+    padding: 14,
+    marginTop: 14,
+  },
+  activeEventUrgent: { borderColor: THEME.bad, backgroundColor: 'rgba(255,92,108,0.14)' },
+  activeEventTitle: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 15, letterSpacing: 0.5 },
+  activeEventText: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 14, lineHeight: 19, marginTop: 2 },
+  swapCard: { width: '100%', backgroundColor: THEME.violet, borderRadius: RADIUS.lg, padding: 16, marginTop: 12 },
+  swapText: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 15, lineHeight: 20, marginTop: 4, marginBottom: 2 },
+  calloutLog: { ...card, width: '100%', marginTop: 12, gap: 4 },
+  calloutLine: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 14 },
+  playButtons: { width: '100%', marginTop: 14 },
+  playingTip: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME.surfaceLo,
+    borderRadius: RADIUS.md,
+    padding: 14,
+    marginTop: 18,
+    marginBottom: 6,
+  },
+  tipMark: { color: THEME.yellow, fontSize: 20, marginRight: 10 },
+  tipRotator: { flex: 1, minHeight: 38, justifyContent: 'center' },
+  tipText: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 14, lineHeight: 19, flexShrink: 1 },
+
+  // ---- reveal
+  suspenseScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
+  suspenseSiren: { fontSize: 76, marginBottom: 14 },
+  suspenseTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 34, lineHeight: 38, textAlign: 'center', marginTop: 8 },
+  suspenseCopy: { color: THEME.yellow, fontFamily: FONTS.bold, fontSize: 16, textAlign: 'center', marginTop: 10 },
+  revealBanner: {
+    backgroundColor: THEME.surfaceHi,
+    borderRadius: 28,
+    borderWidth: 3,
+    borderColor: THEME.yellow,
+    padding: 20,
+    marginBottom: 16,
+  },
+  tieBanner: { borderColor: THEME.pink },
+  revealEmoji: { fontSize: 44, marginBottom: 4 },
+  comedyLine: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 18, lineHeight: 23, marginTop: 8 },
+  revealEventNote: { color: THEME.cyan, fontFamily: FONTS.bold, fontSize: 13, marginTop: 12 },
   reactionToast: {
-    color: COLORS.ink,
-    backgroundColor: '#FFFFFF',
+    color: THEME.onAccent,
+    backgroundColor: THEME.yellow,
     alignSelf: 'center',
     overflow: 'hidden',
-    borderRadius: 15,
+    borderRadius: RADIUS.md,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 12,
-    fontWeight: '800',
+    paddingVertical: 8,
+    fontFamily: FONTS.bold,
+    fontSize: 14,
     marginBottom: 12,
   },
-  scoreSummary: { marginBottom: 11 },
-  roomCard: { backgroundColor: COLORS.card, borderRadius: 18, padding: 17, marginTop: 18, marginBottom: 6 },
-  roomCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  roomCardCopy: { color: COLORS.ink, fontSize: 13, lineHeight: 19, marginTop: 8 },
-  roomCode: { color: COLORS.ink, fontSize: 56, fontWeight: '900', letterSpacing: 10, marginVertical: 8 },
-  roomStatus: { color: '#527D22', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
-  roomStatusBad: { color: '#BA4938' },
-  roomMember: { color: COLORS.ink, fontSize: 14, fontWeight: '800', paddingTop: 10 },
-  roomInput: { marginTop: 22, marginBottom: 4 },
-  roomDivider: { alignItems: 'center', marginTop: 24, marginBottom: 12 },
-  roomDividerText: { color: COLORS.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
-  codeInput: { letterSpacing: 6, fontSize: 20 },
-  voteHint: { color: COLORS.muted, fontSize: 11, fontWeight: '700', textAlign: 'center', marginTop: 10 },
-  scoreSummaryTitle: { color: COLORS.ink, fontSize: 12, fontWeight: '900', letterSpacing: 0.8 },
-  scoreSummaryCopy: { color: COLORS.muted, fontSize: 11, marginTop: 5 },
-  resultCard: { backgroundColor: COLORS.card, borderRadius: 17, padding: 17, marginBottom: 10 },
+  resultCard: { ...card, marginBottom: 12 },
   resultTopLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   playerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1, marginRight: 8 },
-  resultAvatar: { fontSize: 23 },
-  resultPlayer: { flexShrink: 1, color: COLORS.ink, fontSize: 16, fontWeight: '900' },
-  resultPoints: { color: COLORS.muted, fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
-  resultMission: { color: COLORS.ink, fontSize: 13, lineHeight: 19, marginTop: 8, marginBottom: 13 },
+  resultAvatar: { fontSize: 28 },
+  resultPlayer: { flexShrink: 1, color: THEME.text, fontFamily: FONTS.black, fontSize: 19 },
+  resultMission: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 16, lineHeight: 22, marginTop: 8, marginBottom: 12 },
+  resultNote: { color: THEME.cyan, fontFamily: FONTS.bold, fontSize: 12, lineHeight: 16, marginTop: -6, marginBottom: 10 },
   resultOutcomeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  winPoints: { color: '#527D22', fontSize: 10, fontWeight: '900' },
-  outcomeButtons: { flexDirection: 'row', gap: 8 },
-  outcomeButton: { flex: 1, borderRadius: 11, minHeight: 39, alignItems: 'center', justifyContent: 'center' },
-  successButton: { backgroundColor: COLORS.green },
-  missedButton: { backgroundColor: '#F3E5DE' },
-  outcomeText: { color: COLORS.ink, fontSize: 9, fontWeight: '900', letterSpacing: 0.4 },
-  outcomeResult: { fontSize: 10, fontWeight: '900', letterSpacing: 0.6 },
-  successText: { color: '#527D22' },
-  missedText: { color: '#BC5745' },
-  reactionRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 13, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.line },
-  reactionPrompt: { color: COLORS.muted, fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
-  reactionButton: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#F7F4EC', alignItems: 'center', justifyContent: 'center' },
-  reactionEmoji: { fontSize: 17 },
-  miniLeaderboard: { backgroundColor: COLORS.card, borderRadius: 18, padding: 17, marginTop: 12, marginBottom: 12 },
-  leaderRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 13 },
-  leaderRank: { color: COLORS.muted, width: 26, fontSize: 11, fontWeight: '900' },
-  leaderName: { color: COLORS.ink, flex: 1, fontSize: 12, fontWeight: '900' },
-  leaderStreak: { color: '#A96828', fontSize: 10, fontWeight: '800', marginRight: 8 },
-  leaderPoints: { color: COLORS.ink, fontSize: 10, fontWeight: '900' },
-  summaryEmoji: { fontSize: 50, marginBottom: 8 },
-  summaryHighlight: { backgroundColor: COLORS.green, borderRadius: 20, padding: 19, marginTop: 23, marginBottom: 15 },
-  summaryHighlightTitle: { color: COLORS.ink, fontSize: 19, lineHeight: 25, fontWeight: '900', marginTop: 10 },
-  summaryHighlightCopy: { color: '#536048', fontSize: 10, fontWeight: '800', marginTop: 8 },
-  summaryPlayer: { borderTopWidth: 1, borderTopColor: COLORS.line, paddingVertical: 12 },
-  summaryPlayerLine: { flexDirection: 'row', alignItems: 'center' },
-  summaryStats: { color: COLORS.muted, fontSize: 9, fontWeight: '700', marginLeft: 26, marginTop: 5 },
-  summaryHistory: { backgroundColor: COLORS.card, borderRadius: 18, padding: 17, marginTop: 4, marginBottom: 13 },
-  historyRow: { borderTopWidth: 1, borderTopColor: COLORS.line, paddingVertical: 11 },
-  historyRound: { color: COLORS.ink, fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
-  historyDetail: { color: COLORS.muted, fontSize: 10, lineHeight: 15, marginTop: 5 },
+  winPoints: { color: THEME.good, fontFamily: FONTS.black, fontSize: 15 },
+  missedText: { color: THEME.bad, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 0.6 },
+  autoNote: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13 },
+  outcomeButtons: { flexDirection: 'row', gap: 10 },
+  outcomeButton: { flex: 1, borderRadius: RADIUS.md, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  successButton: { backgroundColor: THEME.good, borderBottomWidth: 4, borderBottomColor: '#1F9E5A' },
+  missedButton: { backgroundColor: THEME.bad, borderBottomWidth: 4, borderBottomColor: '#B92A3B' },
+  outcomeText: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 14, letterSpacing: 0.4 },
+  swipeHint: { color: THEME.dim, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 1.2, textAlign: 'center', marginTop: 8 },
+  creativeTag: { color: THEME.pink, fontFamily: FONTS.black, fontSize: 13, marginTop: 10 },
+  denyButton: { alignSelf: 'flex-start', marginTop: 10, paddingVertical: 6 },
+  denyText: { color: THEME.orange, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 0.8 },
+  calloutPoints: { color: THEME.cyan, fontFamily: FONTS.black, fontSize: 13, marginTop: 10 },
+  reactionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: THEME.line,
+  },
+  reactionPrompt: { color: THEME.dim, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 1 },
+  reactionButton: { width: 40, height: 40, borderRadius: 14, backgroundColor: THEME.surfaceLo, alignItems: 'center', justifyContent: 'center' },
+  reactionEmoji: { fontSize: 19 },
+  creativeBlock: { ...card, backgroundColor: THEME.surfaceHi, borderWidth: 2, borderColor: THEME.pink, marginVertical: 4 },
+  miniLeaderboard: { ...card, marginTop: 12, marginBottom: 12 },
+  scoreSummaryTitle: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 15, letterSpacing: 1 },
+  scoreSummaryCopy: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13, marginTop: 2 },
+
+  // ---- summary
+  summaryEmoji: { fontSize: 60, marginBottom: 4 },
+  summaryHighlight: {
+    backgroundColor: THEME.surfaceHi,
+    borderRadius: RADIUS.lg,
+    borderWidth: 3,
+    borderColor: THEME.yellow,
+    padding: 18,
+    marginTop: 18,
+    marginBottom: 14,
+  },
+  summaryHighlightTitle: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 22, lineHeight: 27, marginTop: 6 },
+  summaryHighlightCopy: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 12, marginTop: 4 },
+  summaryHistory: { ...card, marginTop: 4, marginBottom: 12 },
+  historyRow: { borderTopWidth: 1, borderTopColor: THEME.line, paddingVertical: 11 },
+  historyRound: { color: THEME.text, fontFamily: FONTS.black, fontSize: 13, letterSpacing: 0.5 },
+  historyDetail: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13, lineHeight: 18, marginTop: 2 },
+  motnRow: { borderTopWidth: 1, borderTopColor: THEME.line, paddingVertical: 12, gap: 6 },
+  motnCrowned: {
+    backgroundColor: 'rgba(255,210,63,0.12)',
+    borderRadius: RADIUS.md,
+    borderTopWidth: 0,
+    borderWidth: 2,
+    borderColor: THEME.yellow,
+    paddingHorizontal: 12,
+    marginVertical: 4,
+  },
+  motnFaded: { opacity: 0.4 },
+
+  // ---- share card (what gets posted)
   shareCard: {
     alignSelf: 'center',
     width: '100%',
     maxWidth: 360,
-    minHeight: 550,
+    minHeight: 560,
     aspectRatio: 9 / 16,
-    backgroundColor: COLORS.ink,
-    borderRadius: 21,
+    backgroundColor: THEME.bgDeep,
+    borderRadius: RADIUS.lg,
+    borderWidth: 3,
+    borderColor: THEME.yellow,
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 16,
     marginVertical: 22,
   },
   shareCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  shareLogo: { color: COLORS.green, fontSize: 14, fontWeight: '900', letterSpacing: 1.5 },
-  shareTag: { color: '#B9C0B8', fontSize: 7, fontWeight: '900', letterSpacing: 0.5 },
-  shareContent: { flex: 1, justifyContent: 'center', paddingVertical: 16 },
-  shareSiren: { fontSize: 31, marginBottom: 7 },
-  shareHeading: { color: '#FFFFFF', fontSize: 34, lineHeight: 35, fontWeight: '900', letterSpacing: -1 },
-  shareSmallLabel: { color: COLORS.green, fontSize: 8, fontWeight: '900', letterSpacing: 1.2, marginTop: 12, marginBottom: 11 },
-  shareMission: { borderTopWidth: 1, borderTopColor: '#38423C', paddingVertical: 9 },
-  sharePlayer: { color: '#C6F36A', fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
-  shareMissionText: { color: '#FFFFFF', fontSize: 10, lineHeight: 14, fontWeight: '700', marginTop: 3 },
-  shareOutcome: { fontSize: 7, fontWeight: '900', letterSpacing: 0.5, marginTop: 4 },
-  shareWin: { color: COLORS.green },
-  shareLoss: { color: '#FFA187' },
-  morePlayers: { color: '#B9C0B8', fontSize: 8, fontWeight: '900', marginTop: 5 },
-  shareCardBottom: { borderTopWidth: 1, borderTopColor: '#38423C', paddingTop: 12 },
-  shareFooter: { color: '#D8DED8', fontSize: 7, fontWeight: '800', letterSpacing: 0.8 },
-  shareHashtag: { color: COLORS.green, fontSize: 9, fontWeight: '900', marginTop: 4 },
-  dealCard: { minHeight: 190 },
-  readyNote: { color: '#527D22', fontSize: 12, fontWeight: '800', textAlign: 'center', marginVertical: 8 },
-  agentNotice: { color: COLORS.ink, fontSize: 12, fontWeight: '900', textAlign: 'center', marginTop: 12 },
-  swapCard: { width: '100%', backgroundColor: '#E8DFFF', borderRadius: 17, padding: 15, marginTop: 12 },
-  swapText: { color: COLORS.ink, fontSize: 13, lineHeight: 19, fontWeight: '800', marginTop: 6, marginBottom: 4 },
-  calloutLog: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 15, padding: 14, marginTop: 12, gap: 6 },
-  calloutLine: { color: COLORS.ink, fontSize: 12, fontWeight: '800' },
-  playButtons: { width: '100%', marginTop: 18 },
-  resultNote: { color: COLORS.ink, fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: -6, marginBottom: 12 },
-  autoNote: { color: COLORS.muted, fontSize: 11, fontWeight: '800' },
-  swipeHint: { color: COLORS.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1, textAlign: 'center', marginTop: 9 },
-  creativeTag: { color: '#6B4FD1', fontSize: 10, fontWeight: '900', marginTop: 10 },
-  denyButton: { alignSelf: 'flex-start', marginTop: 10, paddingVertical: 6 },
-  denyText: { color: '#A96828', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
-  calloutPoints: { color: COLORS.ink, fontSize: 10, fontWeight: '900', marginTop: 10 },
-  creativeBlock: { backgroundColor: '#E8DFFF', borderRadius: 18, padding: 17, marginTop: 4, marginBottom: 4 },
-  optionBlock: { marginTop: 20 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 11 },
-  setupChip: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 14, paddingHorizontal: 12, minHeight: 40, justifyContent: 'center' },
-  setupChipSelected: { backgroundColor: COLORS.green, borderColor: COLORS.green },
-  setupChipText: { color: COLORS.ink, fontSize: 11, fontWeight: '900', letterSpacing: 0.4 },
-  segment: { flexDirection: 'row', backgroundColor: '#E9E8DF', borderRadius: 14, padding: 4, marginTop: 11 },
-  segmentOption: { flex: 1, minHeight: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  segmentSelected: { backgroundColor: COLORS.card },
-  segmentText: { color: COLORS.ink, fontSize: 10, fontWeight: '900', letterSpacing: 0.6 },
-  customRow: { marginTop: 10 },
-  customAdd: { paddingHorizontal: 8, height: 40, justifyContent: 'center' },
-  customItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, borderRadius: 13, paddingLeft: 14, paddingRight: 8, marginTop: 7 },
-  customText: { flex: 1, color: COLORS.ink, fontSize: 12, fontWeight: '700', paddingVertical: 11 },
-  fameCard: { backgroundColor: COLORS.card, borderRadius: 20, padding: 17, marginTop: 14 },
-  fameTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  fameAvatar: { fontSize: 34 },
-  fameName: { color: COLORS.ink, fontSize: 18, fontWeight: '900' },
-  fameStats: { color: COLORS.muted, fontSize: 10, lineHeight: 15, fontWeight: '700', marginTop: 3 },
-  badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 14 },
-  badge: { width: '31%', flexGrow: 1, backgroundColor: '#F0F5E5', borderRadius: 13, padding: 9, alignItems: 'center' },
-  badgeLocked: { backgroundColor: COLORS.background },
-  badgeEmoji: { fontSize: 20 },
-  badgeName: { color: COLORS.ink, fontSize: 7, fontWeight: '900', letterSpacing: 0.5, marginTop: 4, textAlign: 'center' },
-  badgeHint: { color: COLORS.muted, fontSize: 7, lineHeight: 10, marginTop: 3, textAlign: 'center' },
-  motnRow: { borderTopWidth: 1, borderTopColor: COLORS.line, paddingVertical: 11, gap: 6 },
-  motnCrowned: { backgroundColor: '#F0F5E5', borderRadius: 12, paddingHorizontal: 10, borderTopWidth: 0, marginVertical: 4 },
-  motnFaded: { opacity: 0.45 },
-  toastTitle: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
-  toastCopy: { color: '#B9C0B8', fontSize: 11, fontWeight: '700', marginTop: 3 },
+  shareLogo: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 17, letterSpacing: 1.2 },
+  shareTag: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 8, letterSpacing: 0.6, flexShrink: 1, textAlign: 'right' },
+  shareContent: { flex: 1, justifyContent: 'center', paddingVertical: 14 },
+  shareSiren: { fontSize: 36, marginBottom: 2 },
+  shareHeading: { color: THEME.text, fontFamily: FONTS.black, fontSize: 38, lineHeight: 40 },
+  shareSmallLabel: { color: THEME.lime, fontFamily: FONTS.black, fontSize: 10, letterSpacing: 1.2, marginTop: 10, marginBottom: 8 },
+  shareMission: { borderTopWidth: 1, borderTopColor: THEME.line, paddingVertical: 8 },
+  sharePlayer: { color: THEME.cyan, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 0.8 },
+  shareMissionText: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 12, lineHeight: 16, marginTop: 1 },
+  shareOutcome: { fontFamily: FONTS.black, fontSize: 10, letterSpacing: 0.6, marginTop: 2 },
+  shareWin: { color: THEME.lime },
+  shareLoss: { color: THEME.pink },
+  morePlayers: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 10, marginTop: 4 },
+  shareCardBottom: { borderTopWidth: 1, borderTopColor: THEME.line, paddingTop: 10 },
+  shareFooter: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 10, letterSpacing: 0.8 },
+  shareHashtag: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 14, marginTop: 2 },
+  shareCredit: { color: THEME.dim, fontFamily: FONTS.black, fontSize: 8, letterSpacing: 1.2, marginTop: 4 },
 });

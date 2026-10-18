@@ -1,9 +1,9 @@
-// Animation building blocks for LOWKEY, built on Reanimated (UI thread) and
+// Animation building blocks for the game, built on Reanimated (UI thread) and
 // Gesture Handler. Every component here handles reduced motion itself: it
 // keeps opacity and colour changes and drops movement, scale and overshoot.
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -32,18 +32,25 @@ import { scheduleOnRN } from 'react-native-worklets';
 
 import { CHAOS_EVENTS } from './gameLogic';
 import { haptic, hapticPattern } from './haptics';
-import { COLORS } from './ui';
+import { useSound } from './sounds';
+import { FONTS, RADIUS, THEME } from './theme';
 
 export const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 export const EASE_IN_OUT = Easing.bezier(0.77, 0, 0.175, 1);
 const EASE_SHEET = Easing.bezier(0.32, 0.72, 0, 1);
 
+// Exit animations don't reliably finish in the browser (the element can stay on
+// screen and keep blocking taps), so on the web things just disappear.
+function exitOnNative<T>(animation: T): T | undefined {
+  return Platform.OS === 'web' ? undefined : animation;
+}
+
 export const TONES = {
-  green: '#93BE4B',
-  greenInk: '#527D22',
-  yellow: '#E8B931',
-  orange: COLORS.orange,
-  red: '#CF553F',
+  green: THEME.good,
+  greenInk: THEME.good,
+  yellow: THEME.yellow,
+  orange: THEME.orange,
+  red: THEME.bad,
 };
 
 // ---- Hold to reveal -------------------------------------------------------
@@ -129,17 +136,21 @@ export function ChaosSlot({
   textStyle?: StyleProp<TextStyle>;
 }) {
   const reduced = useReducedMotion();
+  const { play } = useSound();
   const rolling = spin && !reduced;
   const [tick, setTick] = useState(0);
   const pop = useSharedValue(1);
   const onLandedRef = useRef(onLanded);
+  const playRef = useRef(play);
   useEffect(() => {
     onLandedRef.current = onLanded;
-  }, [onLanded]);
+    playRef.current = play;
+  }, [onLanded, play]);
 
   useEffect(() => {
     if (!spin) return undefined;
     if (reduced) {
+      playRef.current('land');
       onLandedRef.current?.();
       return undefined;
     }
@@ -150,6 +161,7 @@ export function ChaosSlot({
       setTick(current);
       if (current >= SLOT_TICKS) {
         haptic('success');
+        playRef.current('land');
         pop.set(
           withSequence(
             withTiming(1.08, { duration: 110, easing: EASE_OUT }),
@@ -238,7 +250,7 @@ export function TimerRing({
   return (
     <Animated.View style={[{ width: size, height: size }, motionStyles.ringWrap, beatStyle]}>
       <Svg height={size} style={StyleSheet.absoluteFill} width={size}>
-        <Circle cx={size / 2} cy={size / 2} fill="none" r={radius} stroke="#E4E3D9" strokeWidth={stroke} />
+        <Circle cx={size / 2} cy={size / 2} fill="none" r={radius} stroke="rgba(255,255,255,0.12)" strokeWidth={stroke} />
         <AnimatedCircle
           animatedProps={ringProps}
           cx={size / 2}
@@ -474,13 +486,25 @@ export type BustEvent = {
   mission: string;
 };
 
-export function BustedOverlay({ event, onDone }: { event: BustEvent | null; onDone: () => void }) {
+// `silent`: show it without sound (a bystander phone in a room, so a table of
+// phones doesn't all go off at once).
+export function BustedOverlay({
+  event,
+  onDone,
+  silent = false,
+}: {
+  event: BustEvent | null;
+  onDone: () => void;
+  silent?: boolean;
+}) {
   if (!event) return null;
-  return <BustedContent event={event} key={event.key} onDone={onDone} />;
+  return <BustedContent event={event} key={event.key} onDone={onDone} silent={silent} />;
 }
 
-function BustedContent({ event, onDone }: { event: BustEvent; onDone: () => void }) {
+function BustedContent({ event, onDone, silent }: { event: BustEvent; onDone: () => void; silent: boolean }) {
   const reduced = useReducedMotion();
+  const { play } = useSound();
+  const playRef = useRef(play);
   const flash = useSharedValue(0);
   const shake = useSharedValue(0);
   const onDoneRef = useRef(onDone);
@@ -489,6 +513,7 @@ function BustedContent({ event, onDone }: { event: BustEvent; onDone: () => void
   }, [onDone]);
 
   useEffect(() => {
+    if (!silent) playRef.current(event.correct ? 'busted' : 'wrong');
     if (event.correct) hapticPattern(['heavy', 'error'], 120);
     else haptic('warning');
     flash.set(
@@ -503,13 +528,13 @@ function BustedContent({ event, onDone }: { event: BustEvent; onDone: () => void
     }
     const timeout = setTimeout(() => onDoneRef.current(), 2800);
     return () => clearTimeout(timeout);
-  }, [event.correct, flash, reduced, shake]);
+  }, [event.correct, flash, reduced, shake, silent]);
 
   const flashStyle = useAnimatedStyle(() => ({ opacity: flash.get() }));
   const cardStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shake.get() }] }));
 
   return (
-    <Animated.View entering={FadeIn.duration(120)} exiting={FadeOut.duration(180)} style={StyleSheet.absoluteFill}>
+    <Animated.View entering={FadeIn.duration(120)} exiting={exitOnNative(FadeOut.duration(180))} style={StyleSheet.absoluteFill}>
       <Pressable
         accessibilityLabel="Dismiss"
         accessibilityRole="button"
@@ -518,10 +543,10 @@ function BustedContent({ event, onDone }: { event: BustEvent; onDone: () => void
       >
         <Animated.View
           pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { backgroundColor: event.correct ? TONES.red : COLORS.ink }, flashStyle]}
+          style={[StyleSheet.absoluteFill, { backgroundColor: event.correct ? TONES.red : THEME.bgDeep }, flashStyle]}
         />
         <Animated.View accessibilityLiveRegion="assertive" style={[motionStyles.bustCard, cardStyle]}>
-          <Stamp color={event.correct ? TONES.red : COLORS.ink} text={event.correct ? 'BUSTED!' : 'WRONG CALL'} />
+          <Stamp color={event.correct ? TONES.red : THEME.yellow} text={event.correct ? 'BUSTED!' : 'WRONG CALL'} />
           <Text style={motionStyles.bustTitle}>
             {event.correct ? `${event.accuser} caught ${event.suspect}!` : `${event.accuser} accused ${event.suspect}…`}
           </Text>
@@ -556,15 +581,26 @@ export function Sheet({
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       {visible && (
         <>
-          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(150)} style={[StyleSheet.absoluteFill, motionStyles.backdrop]}>
+          <Animated.View entering={FadeIn.duration(180)} exiting={exitOnNative(FadeOut.duration(150))} style={[StyleSheet.absoluteFill, motionStyles.backdrop]}>
             <Pressable accessibilityLabel="Close" accessibilityRole="button" onPress={onClose} style={StyleSheet.absoluteFill} />
           </Animated.View>
           <Animated.View
             entering={SlideInDown.duration(300).easing(EASE_SHEET)}
-            exiting={SlideOutDown.duration(200)}
+            exiting={exitOnNative(SlideOutDown.duration(200))}
             style={motionStyles.sheet}
           >
-            <View style={motionStyles.sheetHandle} />
+            <View style={motionStyles.sheetTop}>
+              <View style={motionStyles.sheetHandle} />
+              <Pressable
+                accessibilityLabel="Close"
+                accessibilityRole="button"
+                hitSlop={10}
+                onPress={onClose}
+                style={motionStyles.sheetClose}
+              >
+                <Text style={motionStyles.sheetCloseText}>✕  CLOSE</Text>
+              </Pressable>
+            </View>
             <ScrollView contentContainerStyle={motionStyles.sheetContent} keyboardShouldPersistTaps="handled">
               {children}
             </ScrollView>
@@ -576,7 +612,17 @@ export function Sheet({
 }
 
 // ---- Toast ----------------------------------------------------------------
-export function Toast({ children, onDone, duration = 3200 }: { children: ReactNode; onDone: () => void; duration?: number }) {
+export function Toast({
+  children,
+  onDone,
+  duration = 3200,
+  interactive = false,
+}: {
+  children: ReactNode;
+  onDone: () => void;
+  duration?: number;
+  interactive?: boolean;
+}) {
   const onDoneRef = useRef(onDone);
   useEffect(() => {
     onDoneRef.current = onDone;
@@ -589,8 +635,8 @@ export function Toast({ children, onDone, duration = 3200 }: { children: ReactNo
     <Animated.View
       accessibilityLiveRegion="polite"
       entering={FadeInUp.duration(260).easing(EASE_OUT)}
-      exiting={FadeOut.duration(180)}
-      pointerEvents="none"
+      exiting={exitOnNative(FadeOut.duration(180))}
+      pointerEvents={interactive ? 'auto' : 'none'}
       style={motionStyles.toast}
     >
       {children}
@@ -627,19 +673,236 @@ export function PopOnChange({ trigger, children }: { trigger: string | number; c
   return <Animated.View style={style}>{children}</Animated.View>;
 }
 
+// ---- Ambient touches ------------------------------------------------------
+// Cycles gently through lines (e.g. sample missions in the home bubble). Slow
+// on purpose: it should feel alive, not busy. Reduced motion: shows the first.
+export function RotatingText({
+  lines,
+  intervalMs = 3200,
+  style,
+}: {
+  lines: string[];
+  intervalMs?: number;
+  style?: StyleProp<TextStyle>;
+}) {
+  const reduced = useReducedMotion();
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (reduced || lines.length < 2) return undefined;
+    const interval = setInterval(() => setIndex((current) => (current + 1) % lines.length), intervalMs);
+    return () => clearInterval(interval);
+  }, [intervalMs, lines.length, reduced]);
+  const line = lines[index % lines.length];
+  return (
+    <Animated.Text
+      entering={reduced ? undefined : FadeInUp.duration(320).easing(EASE_OUT)}
+      key={line}
+      style={style}
+    >
+      {line}
+    </Animated.Text>
+  );
+}
+
+// Three dots that pulse in a wave: the drumroll before the reveal.
+export function SuspenseLights({ color }: { color: string }) {
+  return (
+    <View style={motionStyles.lights}>
+      {[0, 1, 2].map((index) => (
+        <SuspenseDot color={color} index={index} key={index} />
+      ))}
+    </View>
+  );
+}
+
+function SuspenseDot({ color, index }: { color: string; index: number }) {
+  const reduced = useReducedMotion();
+  const pulse = useSharedValue(reduced ? 1 : 0.35);
+  useEffect(() => {
+    if (reduced) return undefined;
+    const timeout = setTimeout(() => {
+      pulse.set(
+        withRepeat(
+          withSequence(
+            withTiming(1, { duration: 260, easing: EASE_OUT }),
+            withTiming(0.35, { duration: 260, easing: EASE_OUT }),
+          ),
+          -1,
+        ),
+      );
+    }, index * 130);
+    return () => {
+      clearTimeout(timeout);
+      cancelAnimation(pulse);
+    };
+  }, [index, pulse, reduced]);
+  const style = useAnimatedStyle(() => ({
+    opacity: pulse.get(),
+    transform: reduced ? [] : [{ scale: 0.8 + pulse.get() * 0.3 }],
+  }));
+  return <Animated.View style={[motionStyles.light, { backgroundColor: color }, style]} />;
+}
+
+// A small looping wobble (the siren on the suspense screen).
+export function Wobble({ children, degrees = 9 }: { children: ReactNode; degrees?: number }) {
+  const reduced = useReducedMotion();
+  const angle = useSharedValue(0);
+  useEffect(() => {
+    if (reduced) return undefined;
+    angle.set(
+      withRepeat(
+        withSequence(
+          withTiming(degrees, { duration: 140, easing: EASE_IN_OUT }),
+          withTiming(-degrees, { duration: 140, easing: EASE_IN_OUT }),
+        ),
+        -1,
+        true,
+      ),
+    );
+    return () => cancelAnimation(angle);
+  }, [angle, degrees, reduced]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${angle.get()}deg` }] }));
+  return <Animated.View style={style}>{children}</Animated.View>;
+}
+
+// Springs in once when it mounts (e.g. the lock on "missions sealed").
+export function PopIn({ children, delay = 0 }: { children: ReactNode; delay?: number }) {
+  const reduced = useReducedMotion();
+  const progress = useSharedValue(reduced ? 1 : 0);
+  useEffect(() => {
+    if (reduced) return undefined;
+    const timeout = setTimeout(() => {
+      progress.set(withSpring(1, { duration: 500, dampingRatio: 0.5 }));
+    }, delay);
+    return () => clearTimeout(timeout);
+  }, [delay, progress, reduced]);
+  const style = useAnimatedStyle(() => ({
+    opacity: Math.min(1, progress.get() * 1.5),
+    transform: [
+      { scale: interpolate(progress.get(), [0, 1], [0.85, 1]) },
+      { rotate: `${interpolate(progress.get(), [0, 1], [-10, 0])}deg` },
+    ],
+  }));
+  return <Animated.View style={style}>{children}</Animated.View>;
+}
+
+// ---- Kickoff ----------------------------------------------------------------
+// "3, 2, 1… LET'S START THE CHAOS!" before every round. The round deadline
+// already includes this time (KICKOFF_SECONDS), so nobody loses a second.
+const KICKOFF_STEPS = [
+  { text: '3', color: THEME.yellow },
+  { text: '2', color: THEME.pink },
+  { text: '1', color: THEME.cyan },
+];
+const STEP_MS = 750;
+
+export function Kickoff({ onDone, silent = false }: { onDone: () => void; silent?: boolean }) {
+  const reduced = useReducedMotion();
+  const { play } = useSound();
+  const [step, setStep] = useState(0);
+  const onDoneRef = useRef(onDone);
+  const playRef = useRef(play);
+  useEffect(() => {
+    onDoneRef.current = onDone;
+    playRef.current = play;
+  }, [onDone, play]);
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    KICKOFF_STEPS.forEach((_, index) => {
+      timers.push(
+        setTimeout(() => {
+          setStep(index);
+          if (!silent) playRef.current('tick');
+          haptic('heavy');
+        }, index * STEP_MS),
+      );
+    });
+    timers.push(
+      setTimeout(() => {
+        setStep(KICKOFF_STEPS.length);
+        if (!silent) playRef.current('start');
+        hapticPattern(['heavy', 'success'], 120);
+      }, KICKOFF_STEPS.length * STEP_MS),
+    );
+    timers.push(setTimeout(() => onDoneRef.current(), KICKOFF_STEPS.length * STEP_MS + 1150));
+    return () => timers.forEach(clearTimeout);
+  }, [silent]);
+
+  const go = step >= KICKOFF_STEPS.length;
+  return (
+    <Animated.View
+      accessibilityLiveRegion="assertive"
+      entering={FadeIn.duration(160)}
+      exiting={exitOnNative(FadeOut.duration(220))}
+      style={[StyleSheet.absoluteFill, motionStyles.kickoff]}
+    >
+      {go ? (
+        <Animated.View entering={reduced ? undefined : FadeInUp.duration(320).easing(EASE_OUT)} style={motionStyles.kickoffGo}>
+          <Text style={motionStyles.kickoffEmoji}>🎉</Text>
+          <Text style={motionStyles.kickoffTitle}>LET’S START{'\n'}THE CHAOS!</Text>
+          <Text style={motionStyles.kickoffCopy}>Here we go… act natural. 🤫</Text>
+        </Animated.View>
+      ) : (
+        <PopIn key={step}>
+          <Text style={[motionStyles.kickoffNumber, { color: KICKOFF_STEPS[step].color }]}>{KICKOFF_STEPS[step].text}</Text>
+        </PopIn>
+      )}
+      {!go && <Text style={motionStyles.kickoffHint}>GET READY…</Text>}
+    </Animated.View>
+  );
+}
+
+// Bobs gently up and down forever (decorative stickers). Reduced motion: still.
+export function Bob({ children, delay = 0, distance = 7 }: { children: ReactNode; delay?: number; distance?: number }) {
+  const reduced = useReducedMotion();
+  const y = useSharedValue(0);
+  useEffect(() => {
+    if (reduced) return undefined;
+    const timeout = setTimeout(() => {
+      y.set(
+        withRepeat(
+          withSequence(
+            withTiming(-distance, { duration: 1400, easing: EASE_IN_OUT }),
+            withTiming(0, { duration: 1400, easing: EASE_IN_OUT }),
+          ),
+          -1,
+        ),
+      );
+    }, delay);
+    return () => {
+      clearTimeout(timeout);
+      cancelAnimation(y);
+    };
+  }, [delay, distance, reduced, y]);
+  const style = useAnimatedStyle(() => ({ transform: [{ translateY: y.get() }] }));
+  return <Animated.View style={style}>{children}</Animated.View>;
+}
+
 const motionStyles = StyleSheet.create({
-  holdCard: { width: '100%', backgroundColor: COLORS.green, borderRadius: 21, padding: 21, marginBottom: 10, overflow: 'hidden' },
+  lights: { flexDirection: 'row', gap: 10, marginTop: 32 },
+  light: { width: 12, height: 12, borderRadius: 6 },
+  holdCard: {
+    width: '100%',
+    backgroundColor: THEME.surfaceHi,
+    borderRadius: RADIUS.lg,
+    borderWidth: 3,
+    borderColor: THEME.yellow,
+    padding: 20,
+    marginBottom: 10,
+    overflow: 'hidden',
+  },
   holdCover: {
-    backgroundColor: COLORS.ink,
-    borderRadius: 21,
+    backgroundColor: THEME.pink,
+    borderRadius: RADIUS.lg - 3,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
   },
-  holdIcon: { fontSize: 34, marginBottom: 10 },
-  holdLabel: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', letterSpacing: 1.4 },
-  holdHint: { color: '#B9C0B8', fontSize: 11, fontWeight: '700', marginTop: 6 },
-  slotWindow: { overflow: 'hidden', minHeight: 26, justifyContent: 'center' },
+  holdIcon: { fontSize: 40, marginBottom: 6 },
+  holdLabel: { color: THEME.text, fontFamily: FONTS.black, fontSize: 18, letterSpacing: 1.4 },
+  holdHint: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 13, marginTop: 2, opacity: 0.85 },
+  slotWindow: { overflow: 'hidden', minHeight: 34, justifyContent: 'center' },
   ringWrap: { alignItems: 'center', justifyContent: 'center' },
   swipeStamp: {
     position: 'absolute',
@@ -647,44 +910,73 @@ const motionStyles = StyleSheet.create({
     borderWidth: 3,
     borderRadius: 10,
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    paddingVertical: 2,
+    backgroundColor: THEME.bgDeep,
   },
   swipeYes: { left: 14, borderColor: TONES.greenInk, transform: [{ rotate: '-10deg' }] },
   swipeNo: { right: 14, borderColor: TONES.red, transform: [{ rotate: '10deg' }] },
-  stamp: { alignSelf: 'flex-start', borderWidth: 3, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 },
-  stampText: { fontSize: 15, fontWeight: '900', letterSpacing: 1.5 },
-  countUp: { padding: 0, margin: 0, color: COLORS.ink, fontSize: 10, fontWeight: '900', textAlign: 'right', minWidth: 70 },
+  stamp: { alignSelf: 'flex-start', borderWidth: 3, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 2 },
+  stampText: { fontFamily: FONTS.black, fontSize: 16, letterSpacing: 1.5 },
+  countUp: { padding: 0, margin: 0, color: THEME.yellow, fontFamily: FONTS.black, fontSize: 14, textAlign: 'right', minWidth: 84 },
   flameRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginRight: 8 },
-  flameCount: { color: '#A96828', fontSize: 10, fontWeight: '900' },
-  fizzle: { fontSize: 14, marginRight: 8 },
-  bustBackdrop: { backgroundColor: 'rgba(23,34,29,0.55)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  bustCard: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 24, padding: 24, gap: 10 },
-  bustTitle: { color: COLORS.ink, fontSize: 26, lineHeight: 31, fontWeight: '900', letterSpacing: -0.8, marginTop: 6 },
-  bustMission: { color: COLORS.ink, fontSize: 15, lineHeight: 21, fontWeight: '800' },
-  bustCopy: { color: COLORS.muted, fontSize: 13, lineHeight: 19, fontWeight: '700' },
-  bustDismiss: { color: COLORS.muted, fontSize: 9, fontWeight: '900', letterSpacing: 1, marginTop: 8 },
-  backdrop: { backgroundColor: 'rgba(23,34,29,0.45)' },
+  flameCount: { color: THEME.orange, fontFamily: FONTS.black, fontSize: 12 },
+  fizzle: { fontSize: 15, marginRight: 8 },
+  bustBackdrop: { backgroundColor: THEME.scrim, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  bustCard: {
+    width: '100%',
+    backgroundColor: THEME.surfaceHi,
+    borderRadius: RADIUS.lg,
+    borderWidth: 3,
+    borderColor: THEME.pink,
+    padding: 24,
+    gap: 8,
+  },
+  bustTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 28, lineHeight: 32, marginTop: 6 },
+  bustMission: { color: THEME.yellow, fontFamily: FONTS.bold, fontSize: 16, lineHeight: 22 },
+  bustCopy: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 14, lineHeight: 20 },
+  bustDismiss: { color: THEME.dim, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 1.2, marginTop: 8 },
+  backdrop: { backgroundColor: THEME.scrim },
   sheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
     maxHeight: '88%',
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
+    backgroundColor: THEME.bg,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 3,
+    borderColor: THEME.yellow,
   },
-  sheetHandle: { alignSelf: 'center', width: 42, height: 5, borderRadius: 3, backgroundColor: '#D6D4CA', marginTop: 10 },
-  sheetContent: { padding: 22, paddingBottom: 34 },
+  sheetTop: { height: 48, justifyContent: 'center' },
+  sheetHandle: { alignSelf: 'center', width: 46, height: 5, borderRadius: 3, backgroundColor: THEME.lineStrong },
+  sheetClose: {
+    position: 'absolute',
+    right: 16,
+    top: 9,
+    minHeight: 34,
+    paddingHorizontal: 14,
+    borderRadius: RADIUS.pill,
+    backgroundColor: THEME.surfaceHi,
+    justifyContent: 'center',
+  },
+  sheetCloseText: { color: THEME.text, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 0.8 },
+  sheetContent: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 36 },
   toast: {
     position: 'absolute',
-    left: 22,
-    right: 22,
-    bottom: 28,
-    backgroundColor: COLORS.ink,
-    borderRadius: 18,
+    left: 18,
+    right: 18,
+    bottom: 26,
+    backgroundColor: THEME.yellow,
+    borderRadius: RADIUS.md,
     paddingHorizontal: 18,
     paddingVertical: 14,
   },
+  kickoff: { backgroundColor: THEME.bgDeep, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  kickoffNumber: { fontFamily: FONTS.black, fontSize: 160, lineHeight: 180, textAlign: 'center' },
+  kickoffHint: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 14, letterSpacing: 3, marginTop: 4 },
+  kickoffGo: { alignItems: 'center' },
+  kickoffEmoji: { fontSize: 64 },
+  kickoffTitle: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 46, lineHeight: 50, textAlign: 'center', marginTop: 8 },
+  kickoffCopy: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 18, marginTop: 10 },
 });

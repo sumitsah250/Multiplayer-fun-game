@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "LOWKEY",
+    "name": "Party Spy",
     "slug": "lowkey-secret-mission",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true
     },
     "android": {
-      "package": "com.lowkey.secretmission",
+      "package": "com.sumix.partyspy",
       "adaptiveIcon": {
-        "backgroundColor": "#C6F36A",
+        "backgroundColor": "#1D0B4E",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -38,12 +38,22 @@
           "enableBackgroundPlayback": false
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "backgroundColor": "#1D0B4E"
+        }
+      ]
     ],
     "extra": {
       "eas": {
         "projectId": "21529141-9e8d-4c6d-b875-44550cbdf325"
       }
-    }
+    },
+    "backgroundColor": "#1D0B4E"
   }
 }

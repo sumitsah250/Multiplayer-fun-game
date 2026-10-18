@@ -1,12 +1,29 @@
-// Pure game rules for LOWKEY. Nothing in this file may import React Native,
+// Pure game rules for the game. Nothing in this file may import React Native,
 // so it can be unit tested with `npm test` (Node's built-in test runner).
+
+import { BRAND } from './brand.ts';
 
 export type GameMode = 'classic' | 'chaos' | 'sudden-death';
 export type Difficulty = 'easy' | 'medium' | 'hard';
 export type DifficultySetting = 'mixed' | Difficulty;
 // What the mission asks for. Used to pick a hint that fits.
 export type MissionKind = 'say' | 'do' | 'react';
-export type PackId = 'everyday' | 'house-party' | 'dinner' | 'road-trip' | 'office';
+export type PackId =
+  | 'everyday'
+  | 'desi-adda'
+  | 'friends'
+  | 'couples'
+  | 'family'
+  | 'festival'
+  | 'wedding'
+  | 'college'
+  | 'birthday'
+  | 'movie-night'
+  | 'sports'
+  | 'house-party'
+  | 'dinner'
+  | 'road-trip'
+  | 'office';
 export type PlayerRole = 'agent' | 'double-agent';
 export type ChaosEventId =
   | 'double-down'
@@ -105,6 +122,8 @@ export type DealOptions = {
   doubleAgent: boolean;
   // Chosen avatars by playerKey; players without one get a default.
   avatars?: Record<string, string>;
+  // The group's edited mission library (see missionLibrary); built-ins if absent.
+  library?: MissionTemplate[];
 };
 export type DealtRound = {
   players: Player[];
@@ -135,12 +154,22 @@ export const DIFFICULTY_OPTIONS: { id: DifficultySetting; label: string }[] = [
 
 export const PACK_OPTIONS: { id: PackId; title: string; emoji: string }[] = [
   { id: 'everyday', title: 'EVERYDAY', emoji: '✌️' },
+  { id: 'desi-adda', title: 'DESI ADDA', emoji: '🪔' },
+  { id: 'friends', title: 'FRIENDS', emoji: '🤝' },
+  { id: 'couples', title: 'COUPLES', emoji: '💞' },
+  { id: 'family', title: 'FAMILY', emoji: '👨‍👩‍👧' },
+  { id: 'festival', title: 'FESTIVAL', emoji: '🎆' },
+  { id: 'wedding', title: 'WEDDING', emoji: '💍' },
+  { id: 'college', title: 'COLLEGE', emoji: '🎒' },
+  { id: 'birthday', title: 'BIRTHDAY', emoji: '🎂' },
+  { id: 'movie-night', title: 'MOVIE NIGHT', emoji: '🍿' },
+  { id: 'sports', title: 'SPORTS', emoji: '🏏' },
   { id: 'house-party', title: 'HOUSE PARTY', emoji: '🪩' },
   { id: 'dinner', title: 'DINNER', emoji: '🍝' },
   { id: 'road-trip', title: 'ROAD TRIP', emoji: '🚗' },
   { id: 'office', title: 'OFFICE · SFW', emoji: '💼' },
 ];
-export const DEFAULT_PACKS: PackId[] = ['everyday', 'house-party'];
+export const DEFAULT_PACKS: PackId[] = ['everyday', 'desi-adda', 'friends'];
 
 type MissionRow = [Difficulty, MissionKind, string];
 
@@ -173,6 +202,162 @@ const PACK_MISSIONS: Record<PackId, MissionRow[]> = {
     ['hard', 'say', 'Get {t} to say “I’m proud of you.”'],
     ['hard', 'do', 'Get {t} to do an impression of someone.'],
     ['hard', 'do', 'Get {t} to swap seats with you.'],
+  ],
+  // Indian and Nepali hangouts.
+  'desi-adda': [
+    ['easy', 'say', 'Get {t} to say “yaar.”'],
+    ['easy', 'say', 'Get {t} to say “arey!”'],
+    ['easy', 'say', 'Get {t} to say “ke garne.”'],
+    ['easy', 'say', 'Get {t} to call someone “dai” or “didi.”'],
+    ['easy', 'say', 'Get {t} to say “bhai.”'],
+    ['easy', 'do', 'Get {t} to do a namaste.'],
+    ['easy', 'do', 'Get {t} to offer you chai.'],
+    ['medium', 'say', 'Get {t} to talk about momo.'],
+    ['medium', 'say', 'Get {t} to name their favorite festival (Dashain, Tihar, Diwali, Holi…).'],
+    ['medium', 'say', 'Get {t} to talk about cricket.'],
+    ['medium', 'say', 'Get {t} to say “jugaad.”'],
+    ['medium', 'say', 'Get {t} to say “hajur.”'],
+    ['medium', 'say', 'Get {t} to say “ekdam.”'],
+    ['medium', 'do', 'Get {t} to hum a Bollywood song.'],
+    ['hard', 'say', 'Get {t} to say “dal bhat power, 24 hour.”'],
+    ['hard', 'say', 'Get {t} to say “chha ni.”'],
+    ['hard', 'do', 'Get {t} to deliver a famous filmy dialogue.'],
+    ['hard', 'do', 'Get {t} to do a Bollywood dance step.'],
+  ],
+  friends: [
+    ['easy', 'say', 'Get {t} to say “no way.”'],
+    ['easy', 'say', 'Get {t} to say “I swear.”'],
+    ['easy', 'say', 'Get {t} to tell you about their day.'],
+    ['easy', 'do', 'Get {t} to show you a meme.'],
+    ['medium', 'say', 'Get {t} to bring up an old inside joke.'],
+    ['medium', 'say', 'Get {t} to say “you’re crazy.”'],
+    ['medium', 'say', 'Get {t} to plan the next hangout.'],
+    ['medium', 'say', 'Get {t} to roast someone (gently).'],
+    ['medium', 'do', 'Get {t} to hug you.'],
+    ['medium', 'do', 'Get {t} to wink at you.'],
+    ['hard', 'say', 'Get {t} to say “best friends forever.”'],
+    ['hard', 'say', 'Get {t} to admit something embarrassing.'],
+    ['hard', 'do', 'Get {t} to invent a secret handshake with you.'],
+  ],
+  // Double dates and couples' nights. Sweet, never awkward, and none of them
+  // assume the target has a partner.
+  couples: [
+    ['easy', 'say', 'Get {t} to say “so cute.”'],
+    ['easy', 'say', 'Get {t} to name the most romantic movie.'],
+    ['easy', 'say', 'Get {t} to talk about a wedding.'],
+    ['easy', 'react', 'Make {t} say “aww.”'],
+    ['medium', 'say', 'Get {t} to describe their dream date.'],
+    ['medium', 'say', 'Get {t} to rate a love song out of 10.'],
+    ['medium', 'say', 'Get {t} to give a relationship tip.'],
+    ['medium', 'say', 'Get {t} to say “babe” or “jaan.”'],
+    ['medium', 'do', 'Get {t} to make a heart sign with their hands.'],
+    ['hard', 'say', 'Get {t} to share their funniest date story.'],
+    ['hard', 'say', 'Get {t} to say “I love you” to anyone (or anything).'],
+    ['hard', 'do', 'Get {t} to sing a line from a romantic song.'],
+    ['hard', 'do', 'Get {t} to take a couple-style selfie with you.'],
+    ['hard', 'react', 'Make {t} blush.'],
+  ],
+  // Safe for kids, parents and grandparents.
+  family: [
+    ['easy', 'say', 'Get {t} to name their favorite dish at home.'],
+    ['easy', 'say', 'Get {t} to say “good job.”'],
+    ['easy', 'do', 'Get {t} to pass you something sweet.'],
+    ['easy', 'do', 'Get {t} to clap for you.'],
+    ['medium', 'say', 'Get {t} to tell a story from when they were young.'],
+    ['medium', 'say', 'Get {t} to give you a piece of advice.'],
+    ['medium', 'say', 'Get {t} to call you by a nickname.'],
+    ['medium', 'do', 'Get {t} to play a quick game with you.'],
+    ['medium', 'react', 'Make {t} laugh at a dad joke.'],
+    ['hard', 'say', 'Get {t} to say “when I was your age…”'],
+    ['hard', 'say', 'Get {t} to say “eat a little more.”'],
+    ['hard', 'say', 'Get {t} to say “you’ve grown so much!”'],
+    ['hard', 'do', 'Get {t} to show you an old family photo.'],
+  ],
+  // Diwali, Dashain, Tihar, Holi, Eid, Christmas, New Year…
+  festival: [
+    ['easy', 'say', 'Get {t} to wish someone a happy festival.'],
+    ['easy', 'say', 'Get {t} to talk about sweets.'],
+    ['easy', 'say', 'Get {t} to name their favorite festival food.'],
+    ['easy', 'say', 'Get {t} to talk about new clothes.'],
+    ['medium', 'say', 'Get {t} to say “so many lights!”'],
+    ['medium', 'say', 'Get {t} to describe their best festival memory.'],
+    ['medium', 'say', 'Get {t} to say “tika” or “rangoli.”'],
+    ['medium', 'say', 'Get {t} to talk about how much they ate today.'],
+    ['medium', 'do', 'Get {t} to offer you a sweet.'],
+    ['hard', 'say', 'Get {t} to talk about fireworks for a whole minute.'],
+    ['hard', 'do', 'Get {t} to dance to a festival song.'],
+    ['hard', 'do', 'Get {t} to take a festive selfie with you.'],
+  ],
+  // Shaadi / bihe season.
+  wedding: [
+    ['easy', 'say', 'Get {t} to talk about the wedding food.'],
+    ['easy', 'say', 'Get {t} to say “so beautiful!”'],
+    ['easy', 'say', 'Get {t} to talk about their outfit.'],
+    ['easy', 'do', 'Get {t} to take a photo with you.'],
+    ['medium', 'say', 'Get {t} to name their favorite wedding song.'],
+    ['medium', 'say', 'Get {t} to talk about mehendi or haldi.'],
+    ['medium', 'say', 'Get {t} to say “the couple looks amazing.”'],
+    ['medium', 'say', 'Get {t} to talk about the baraat.'],
+    ['hard', 'say', 'Get {t} to ask someone “when is your wedding?”'],
+    ['hard', 'say', 'Get {t} to ask “love marriage or arranged?”'],
+    ['hard', 'do', 'Get {t} to do a wedding dance step.'],
+    ['hard', 'do', 'Get {t} to make a toast to the couple.'],
+  ],
+  college: [
+    ['easy', 'say', 'Get {t} to talk about exams.'],
+    ['easy', 'say', 'Get {t} to name their favorite teacher.'],
+    ['easy', 'say', 'Get {t} to talk about their phone battery.'],
+    ['easy', 'do', 'Get {t} to check a group chat.'],
+    ['medium', 'say', 'Get {t} to ask “bro, assignment?”'],
+    ['medium', 'say', 'Get {t} to complain about canteen food.'],
+    ['medium', 'say', 'Get {t} to say “one more chai.”'],
+    ['medium', 'say', 'Get {t} to tell a hostel or classroom story.'],
+    ['hard', 'say', 'Get {t} to say “mark my attendance.”'],
+    ['hard', 'say', 'Get {t} to say “I didn’t study at all.”'],
+    ['hard', 'say', 'Get {t} to suggest bunking a class.'],
+    ['hard', 'say', 'Get {t} to talk about someone’s crush.'],
+  ],
+  birthday: [
+    ['easy', 'say', 'Get {t} to talk about cake.'],
+    ['easy', 'say', 'Get {t} to say “party!”'],
+    ['easy', 'do', 'Get {t} to clap along to something.'],
+    ['easy', 'do', 'Get {t} to take a group selfie.'],
+    ['medium', 'say', 'Get {t} to say “make a wish!”'],
+    ['medium', 'say', 'Get {t} to describe their best birthday ever.'],
+    ['medium', 'say', 'Get {t} to share their dream birthday gift.'],
+    ['medium', 'do', 'Get {t} to sing “happy birthday.”'],
+    ['hard', 'say', 'Get {t} to guess your age.'],
+    ['hard', 'say', 'Get {t} to shout “speech!”'],
+    ['hard', 'do', 'Get {t} to wear something silly (a hat, a ribbon…).'],
+    ['hard', 'do', 'Get {t} to blow out an imaginary candle.'],
+  ],
+  'movie-night': [
+    ['easy', 'say', 'Get {t} to name their favorite actor.'],
+    ['easy', 'say', 'Get {t} to say “popcorn.”'],
+    ['easy', 'say', 'Get {t} to rate a movie out of 10.'],
+    ['easy', 'say', 'Get {t} to recommend a show.'],
+    ['medium', 'say', 'Get {t} to quote a movie.'],
+    ['medium', 'say', 'Get {t} to talk about a famous villain.'],
+    ['medium', 'do', 'Get {t} to hum a movie theme.'],
+    ['medium', 'react', 'Make {t} say “that was so sad.”'],
+    ['hard', 'say', 'Get {t} to spoil a movie ending.'],
+    ['hard', 'say', 'Get {t} to say “plot twist!”'],
+    ['hard', 'say', 'Get {t} to say “the book was better.”'],
+    ['hard', 'do', 'Get {t} to strike a famous movie pose.'],
+  ],
+  sports: [
+    ['easy', 'say', 'Get {t} to name their favorite player.'],
+    ['easy', 'say', 'Get {t} to talk about the last match.'],
+    ['easy', 'say', 'Get {t} to predict a winner.'],
+    ['easy', 'do', 'Get {t} to stretch like an athlete.'],
+    ['medium', 'say', 'Get {t} to say “what a shot!”'],
+    ['medium', 'say', 'Get {t} to shout “goal!”'],
+    ['medium', 'say', 'Get {t} to shout “out!”'],
+    ['medium', 'do', 'Get {t} to do a double high-five with you.'],
+    ['hard', 'say', 'Get {t} to argue about who the GOAT is.'],
+    ['hard', 'say', 'Get {t} to say “that was a foul.”'],
+    ['hard', 'do', 'Get {t} to do a goal celebration.'],
+    ['hard', 'do', 'Get {t} to commentate like it’s live TV.'],
   ],
   'house-party': [
     ['easy', 'say', 'Get {t} to say “let’s go!”'],
@@ -414,12 +599,19 @@ function derangement(count: number, random: () => number): number[] {
 // tops up the deal when a small pack can't cover every player.
 function missionPool(options: DealOptions): { primary: MissionTemplate[]; extra: MissionTemplate[] } {
   const packs = options.packs.length ? options.packs : DEFAULT_PACKS;
-  const inPacks = MISSION_TEMPLATES.filter((template) => packs.includes(template.pack));
+  const library = options.library?.length ? options.library : MISSION_TEMPLATES;
+  // Deleted missions stay deleted. Only a library edited down below a full group
+  // borrows built-ins back, so dealing can never run out.
+  const all =
+    library.length >= MAX_PLAYERS
+      ? library
+      : [...library, ...MISSION_TEMPLATES.filter((template) => !library.some((own) => own.id === template.id))];
+  const inPacks = library.filter((template) => packs.includes(template.pack));
   const primary =
     options.difficulty === 'mixed' ? inPacks : inPacks.filter((template) => template.difficulty === options.difficulty);
   const extra = [
     ...inPacks.filter((template) => !primary.includes(template)),
-    ...MISSION_TEMPLATES.filter((template) => !inPacks.includes(template)),
+    ...all.filter((template) => !inPacks.includes(template)),
   ];
   return { primary, extra };
 }
@@ -767,6 +959,97 @@ export function secondsRemaining(endsAt: number, now: number): number {
   return Math.max(0, Math.ceil((endsAt - now) / 1000));
 }
 
+// "3, 2, 1… let's start the chaos!" plays before the clock starts, so the
+// round's deadline includes it and the timer shows the full time until then.
+export const KICKOFF_SECONDS = 3.4;
+
+export function roundDeadline(now: number, durationSeconds: number): number {
+  return now + (durationSeconds + KICKOFF_SECONDS) * 1000;
+}
+
+export function displaySeconds(endsAt: number, now: number, durationSeconds: number): number {
+  return Math.min(durationSeconds, secondsRemaining(endsAt, now));
+}
+
+export function inKickoff(endsAt: number, now: number, durationSeconds: number): boolean {
+  return endsAt - now > durationSeconds * 1000;
+}
+
+// ---- Editable mission library ----
+// Players can edit, delete and add missions per pack. Only the changes are
+// stored; the built-in list stays the source for everything untouched.
+export type MissionEdits = {
+  removed: string[];
+  edited: Record<string, { text: string; difficulty: Difficulty }>;
+  added: MissionTemplate[];
+};
+
+export const EMPTY_MISSION_EDITS: MissionEdits = { removed: [], edited: {}, added: [] };
+
+export function missionLibrary(edits: MissionEdits): MissionTemplate[] {
+  const builtIn = MISSION_TEMPLATES.filter((template) => !edits.removed.includes(template.id)).map((template) => {
+    const edit = edits.edited[template.id];
+    return edit ? { ...template, text: edit.text, difficulty: edit.difficulty } : template;
+  });
+  return [...builtIn, ...edits.added.filter((template) => !edits.removed.includes(template.id))];
+}
+
+// Missions are shown and typed with `@` for the target ("Get @ to dance").
+export function toEditableText(template: string): string {
+  return template.split('{t}').join('@');
+}
+
+// Turns what a player typed back into a template, or null if it's empty.
+// Without an `@`, the target's name goes in front.
+export function fromEditableText(input: string): string | null {
+  const clean = cleanCustomMission(input);
+  if (!clean) return null;
+  return clean.includes('@') ? clean.split('@').join('{t}') : `{t}: ${clean}`;
+}
+
+export function editMission(
+  edits: MissionEdits,
+  template: MissionTemplate,
+  input: string,
+  difficulty: Difficulty,
+): MissionEdits {
+  const text = fromEditableText(input);
+  if (!text) return edits;
+  if (edits.added.some((own) => own.id === template.id)) {
+    return { ...edits, added: edits.added.map((own) => (own.id === template.id ? { ...own, text, difficulty } : own)) };
+  }
+  return { ...edits, edited: { ...edits.edited, [template.id]: { text, difficulty } } };
+}
+
+export function removeMission(edits: MissionEdits, id: string): MissionEdits {
+  if (edits.added.some((own) => own.id === id)) {
+    return { ...edits, added: edits.added.filter((own) => own.id !== id) };
+  }
+  return edits.removed.includes(id) ? edits : { ...edits, removed: [...edits.removed, id] };
+}
+
+export function addMission(
+  edits: MissionEdits,
+  pack: PackId,
+  input: string,
+  difficulty: Difficulty,
+  id: string,
+): MissionEdits {
+  const text = fromEditableText(input);
+  if (!text) return edits;
+  return { ...edits, added: [...edits.added, { id, pack, difficulty, kind: 'do', text }] };
+}
+
+// Puts a pack back to its built-in missions (drops edits, deletions and additions).
+export function restorePack(edits: MissionEdits, pack: PackId): MissionEdits {
+  const packIds = new Set(MISSION_TEMPLATES.filter((template) => template.pack === pack).map((template) => template.id));
+  return {
+    removed: edits.removed.filter((id) => !packIds.has(id)),
+    edited: Object.fromEntries(Object.entries(edits.edited).filter(([id]) => !packIds.has(id))),
+    added: edits.added.filter((own) => own.pack !== pack),
+  };
+}
+
 export function isPastHalfway(elapsedSeconds: number, durationSeconds: number): boolean {
   return durationSeconds > 0 && elapsedSeconds >= durationSeconds * HALFWAY_FRACTION;
 }
@@ -907,10 +1190,10 @@ export function makeShareMessage(
 ): string {
   const allMissionsScored = players.every((player) => player.completed !== null);
   const headline = !allMissionsScored
-    ? 'We played LOWKEY — here’s how the missions went!'
+    ? `We played ${BRAND.name} — here’s how the missions went!`
     : winners.length
-    ? `${winners.map((player) => player.name).join(' & ')} won LOWKEY!`
-    : 'We played LOWKEY — nobody completed a mission!';
+    ? `${winners.map((player) => player.name).join(' & ')} won ${BRAND.name}!`
+    : `We played ${BRAND.name} — nobody completed a mission!`;
   const missions = players
     .map((player) => {
       const status = isCaught(callouts, player.name)
@@ -923,5 +1206,5 @@ export function makeShareMessage(
       return `${player.name}: ${player.mission} — ${status}`;
     })
     .join('\n');
-  return `${headline}\nMode: ${MODE_OPTIONS.find((option) => option.id === mode)?.title ?? 'CLASSIC'}${event ? ` · ${event.name}` : ''}\n\n${missions}\n\n#LOWKEYGAME`;
+  return `${headline}\nMode: ${MODE_OPTIONS.find((option) => option.id === mode)?.title ?? 'CLASSIC'}${event ? ` · ${event.name}` : ''}\n\n${missions}\n\n${BRAND.hashtag}\n${BRAND.credit}`;
 }

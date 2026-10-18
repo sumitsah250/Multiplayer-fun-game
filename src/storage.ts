@@ -3,13 +3,15 @@
 // can rejoin the same seat). Nothing here leaves the device.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { DEFAULT_PACKS, MAX_CUSTOM_MISSIONS, PACK_OPTIONS, cleanCustomMission } from './gameLogic';
-import type { DifficultySetting, Lifetime, PackId } from './gameLogic';
+import { DEFAULT_PACKS, EMPTY_MISSION_EDITS, MAX_CUSTOM_MISSIONS, PACK_OPTIONS, cleanCustomMission } from './gameLogic';
+import type { Difficulty, DifficultySetting, Lifetime, MissionEdits, MissionTemplate, PackId } from './gameLogic';
 
 const KEYS = {
   lifetime: 'lowkey.lifetime.v1',
   setup: 'lowkey.setup.v1',
   lastRoom: 'lowkey.lastRoom.v1',
+  sound: 'lowkey.sound.v1',
+  library: 'lowkey.library.v1',
 };
 
 // A saved seat is only offered for a few hours; after that the room is long gone.
@@ -98,6 +100,48 @@ export async function loadSetup(): Promise<SetupPreferences> {
 
 export function saveSetup(setup: SetupPreferences) {
   void writeJson(KEYS.setup, setup);
+}
+
+const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard'];
+const isDifficulty = (value: unknown): value is Difficulty => DIFFICULTIES.includes(value as Difficulty);
+
+export async function loadMissionEdits(): Promise<MissionEdits> {
+  const value = await readJson(KEYS.library);
+  if (!isRecord(value)) return EMPTY_MISSION_EDITS;
+  const packIds = PACK_OPTIONS.map((pack) => pack.id);
+  const removed = Array.isArray(value.removed) ? value.removed.filter((id): id is string => typeof id === 'string') : [];
+  const edited = isRecord(value.edited)
+    ? Object.fromEntries(
+        Object.entries(value.edited).filter(
+          (entry): entry is [string, { text: string; difficulty: Difficulty }] =>
+            isRecord(entry[1]) && typeof entry[1].text === 'string' && isDifficulty(entry[1].difficulty),
+        ),
+      )
+    : {};
+  const added = Array.isArray(value.added)
+    ? value.added.filter(
+        (own): own is MissionTemplate =>
+          isRecord(own) &&
+          typeof own.id === 'string' &&
+          typeof own.text === 'string' &&
+          packIds.includes(own.pack as PackId) &&
+          isDifficulty(own.difficulty),
+      )
+    : [];
+  return { removed, edited, added: added.map((own) => ({ ...own, kind: own.kind ?? 'do' })) };
+}
+
+export function saveMissionEdits(edits: MissionEdits) {
+  void writeJson(KEYS.library, edits);
+}
+
+// Sound is on unless the player turned it off.
+export async function loadSoundEnabled(): Promise<boolean> {
+  return (await readJson(KEYS.sound)) !== false;
+}
+
+export function saveSoundEnabled(enabled: boolean) {
+  void writeJson(KEYS.sound, enabled);
 }
 
 export async function loadLastRoom(): Promise<LastRoom | null> {

@@ -10,6 +10,8 @@ import {
   applyRoundToLifetime,
   canCallOut,
   chaosRuleSecondsLeft,
+  displaySeconds,
+  inKickoff,
   isPastHalfway,
   makeRoundRecord,
   newBadges,
@@ -20,10 +22,12 @@ import {
 import type { Badge, ChaosEvent } from '../gameLogic';
 import { CallOutPanel, ChaosEventCard, DifficultyTag, Leaderboard, MissionBody, PeekPanel } from '../gameUi';
 import { haptic, hapticPattern } from '../haptics';
-import { BustedOverlay, Entrance, HoldToReveal, Sheet, Stamp, TONES, TimerRing, Toast } from '../motion';
+import { useSound } from '../sounds';
+import { BustedOverlay, Entrance, HoldToReveal, Kickoff, Sheet, Stamp, TONES, TimerRing, Toast } from '../motion';
 import type { BustEvent } from '../motion';
 import { updateLifetime } from '../storage';
-import { COLORS, Eyebrow, KeepScreenAwake, PrimaryButton, ProtectMissions } from '../ui';
+import { FONTS, RADIUS, THEME } from '../theme';
+import { Eyebrow, KeepScreenAwake, PrimaryButton, ProtectMissions } from '../ui';
 import { closeRoomChannel, openRoomChannel } from './client';
 import {
   ROOM_EVENTS,
@@ -131,14 +135,18 @@ function useGuestRoom(code: string, name: string, memberId: string, avatar: stri
   return { status, members, snapshot, endsAt, hostAway, sendReady, sendCallout, me };
 }
 
-function useCountdown(endsAt: number | null) {
+function useCountdown(endsAt: number | null, durationSeconds: number) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (endsAt === null) return undefined;
-    const interval = setInterval(() => setNow(Date.now()), 500);
+    const interval = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(interval);
   }, [endsAt]);
-  return endsAt === null ? null : secondsRemaining(endsAt, now);
+  if (endsAt === null) return { seconds: null, kickoff: false };
+  return {
+    seconds: displaySeconds(endsAt, now, durationSeconds),
+    kickoff: inKickoff(endsAt, now, durationSeconds) && secondsRemaining(endsAt, now) > 0,
+  };
 }
 
 function formatTimer(seconds: number) {
@@ -168,7 +176,9 @@ export function GuestRoom({
   onExit: (keepSeat: boolean) => void;
 }) {
   const { status, members, snapshot, endsAt, hostAway, sendReady, sendCallout, me } = useGuestRoom(code, name, memberId, avatar);
-  const secondsLeft = useCountdown(snapshot?.phase === 'playing' ? endsAt : null);
+  const countdown = useCountdown(snapshot?.phase === 'playing' ? endsAt : null, snapshot?.durationSeconds ?? 0);
+  const secondsLeft = countdown.seconds;
+  const { play } = useSound();
   const [seenRound, setSeenRound] = useState(0);
   const [readyRound, setReadyRound] = useState(0);
   const [spunRound, setSpunRound] = useState(0);
@@ -218,8 +228,9 @@ export function GuestRoom({
   useEffect(() => {
     if (!iWasSwapped || swapNotified.current === roundId) return;
     swapNotified.current = roundId;
+    play('swap');
     hapticPattern(['heavy', 'tick', 'heavy'], 120);
-  }, [iWasSwapped, roundId]);
+  }, [iWasSwapped, play, roundId]);
 
   // Show BUSTED for new call-outs (but not for ones that happened before this phone joined).
   useEffect(() => {
@@ -243,9 +254,12 @@ export function GuestRoom({
     const record = makeRoundRecord(snapshot.roundsPlayed, snapshot.players, outcomeFromSnapshot(snapshot));
     void updateLifetime((current) => applyRoundToLifetime(current, record, me.name)).then(({ before, after }) => {
       const earned = newBadges(before, after);
-      if (earned.length) setNotices((queue) => [...queue, ...earned]);
+      if (earned.length) {
+        play('badge');
+        setNotices((queue) => [...queue, ...earned]);
+      }
     });
-  }, [me.name, myPlayer, snapshot]);
+  }, [me.name, myPlayer, play, snapshot]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -295,7 +309,12 @@ export function GuestRoom({
           />
         )}
       </Sheet>
-      <BustedOverlay event={bust} onDone={() => setBust(null)} />
+      {phase === 'playing' && countdown.kickoff && <Kickoff onDone={() => {}} silent />}
+      <BustedOverlay
+        event={bust}
+        onDone={() => setBust(null)}
+        silent={!bust || ![bust.accuser, bust.suspect].some((name) => playerKey(name) === playerKey(me.name))}
+      />
       {notice && (
         <Toast key={notice.badge.id} onDone={() => setNotices((queue) => queue.slice(1))}>
           <Text style={styles.toastTitle}>
@@ -391,7 +410,14 @@ export function GuestRoom({
             <Text style={styles.footnote}>🕵️ One of you is a double agent.</Text>
           )}
           <Text style={styles.title}>{iAmReady ? 'Phone face down.' : 'Make sure nobody’s looking.'}</Text>
-          <HoldToReveal key={`card-${roundId}`} onReveal={() => setSeenRound(roundId)} style={styles.missionCard}>
+          <HoldToReveal
+            key={`card-${roundId}`}
+            onReveal={() => {
+              if (seenRound !== roundId) play('secret');
+              setSeenRound(roundId);
+            }}
+            style={styles.missionCard}
+          >
             <MissionBody event={chaosEvent} hint={false} outcome={missionOutcome} player={myPlayer} />
           </HoldToReveal>
           {iAmReady ? (
@@ -557,37 +583,46 @@ export function GuestRoom({
   );
 }
 
+const card = {
+  backgroundColor: THEME.surface,
+  borderRadius: RADIUS.lg,
+  borderWidth: 1,
+  borderColor: THEME.line,
+  padding: 17,
+  marginTop: 12,
+} as const;
+
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  page: { flexGrow: 1, paddingHorizontal: 22, paddingTop: 16, paddingBottom: 34 },
+  page: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 36 },
   center: { alignItems: 'center', marginTop: 4 },
   centerText: { textAlign: 'center' },
-  roomBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 },
-  connection: { color: '#527D22', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
-  connectionBad: { color: '#BA4938' },
-  bigEmoji: { fontSize: 50, marginTop: 12, marginBottom: 10 },
-  title: { color: COLORS.ink, fontSize: 30, lineHeight: 36, fontWeight: '900', letterSpacing: -1, marginTop: 8 },
-  copy: { color: COLORS.muted, fontSize: 14, lineHeight: 21, marginTop: 8, marginBottom: 12 },
-  footnote: { color: COLORS.muted, fontSize: 11, fontWeight: '700', textAlign: 'center', marginTop: 16, marginBottom: 8 },
-  card: { backgroundColor: COLORS.card, borderRadius: 17, padding: 17, marginTop: 12 },
-  memberRow: { color: COLORS.ink, fontSize: 14, fontWeight: '800', paddingTop: 10 },
-  chaosCard: { backgroundColor: COLORS.green, borderRadius: 17, padding: 15, marginTop: 14 },
-  chaosName: { color: COLORS.ink, fontSize: 14, fontWeight: '900' },
-  chaosRule: { color: COLORS.ink, fontSize: 12, lineHeight: 17, fontWeight: '800', marginTop: 6 },
-  swapCard: { backgroundColor: '#E8DFFF', borderRadius: 17, padding: 15, marginTop: 12 },
-  swapText: { color: COLORS.ink, fontSize: 13, lineHeight: 19, fontWeight: '800', marginTop: 6 },
-  calloutLine: { color: COLORS.ink, fontSize: 12, fontWeight: '800', paddingVertical: 3 },
-  missionCard: { marginTop: 16, minHeight: 190 },
-  timer: { color: COLORS.ink, fontSize: 52, fontWeight: '900', letterSpacing: -2, textAlign: 'center', fontVariant: ['tabular-nums'] },
-  timerUrgent: { color: '#CF553F' },
+  roomBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  connection: { color: THEME.good, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 1 },
+  connectionBad: { color: THEME.bad },
+  bigEmoji: { fontSize: 58, marginTop: 10, marginBottom: 6 },
+  title: { color: THEME.text, fontFamily: FONTS.black, fontSize: 32, lineHeight: 38, marginTop: 6 },
+  copy: { color: THEME.muted, fontFamily: FONTS.medium, fontSize: 15, lineHeight: 22, marginTop: 6, marginBottom: 10 },
+  footnote: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13, textAlign: 'center', marginTop: 16, marginBottom: 8 },
+  card,
+  memberRow: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 16, paddingTop: 10 },
+  chaosCard: { ...card, backgroundColor: THEME.surfaceHi, borderWidth: 2, borderColor: THEME.yellow, marginTop: 14 },
+  chaosName: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 16 },
+  chaosRule: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 14, lineHeight: 19, marginTop: 4 },
+  swapCard: { backgroundColor: THEME.violet, borderRadius: RADIUS.lg, padding: 16, marginTop: 12 },
+  swapText: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 15, lineHeight: 20, marginTop: 4 },
+  calloutLine: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 14, paddingVertical: 3 },
+  missionCard: { marginTop: 16, minHeight: 210 },
+  timer: { color: THEME.text, fontFamily: FONTS.black, fontSize: 52, lineHeight: 60, textAlign: 'center', fontVariant: ['tabular-nums'] },
+  timerUrgent: { color: THEME.bad },
   resultTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  resultName: { color: COLORS.ink, fontSize: 16, fontWeight: '900', flexShrink: 1 },
-  resultMission: { color: COLORS.ink, fontSize: 13, lineHeight: 19, marginTop: 8 },
+  resultName: { color: THEME.text, fontFamily: FONTS.black, fontSize: 18, flexShrink: 1 },
+  resultMission: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 15, lineHeight: 21, marginTop: 8 },
   resultOutcome: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
-  voting: { color: COLORS.muted, fontSize: 10, fontWeight: '900', letterSpacing: 0.6 },
-  points: { color: '#527D22', fontSize: 10, fontWeight: '900' },
-  fail: { color: '#BC5745', fontSize: 10, fontWeight: '900' },
-  creative: { color: '#6B4FD1', fontSize: 10, fontWeight: '900', marginTop: 10 },
-  toastTitle: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
-  toastCopy: { color: '#B9C0B8', fontSize: 11, fontWeight: '700', marginTop: 3 },
+  voting: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 0.8 },
+  points: { color: THEME.good, fontFamily: FONTS.black, fontSize: 14 },
+  fail: { color: THEME.bad, fontFamily: FONTS.black, fontSize: 12 },
+  creative: { color: THEME.pink, fontFamily: FONTS.black, fontSize: 13, marginTop: 10 },
+  toastTitle: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 15 },
+  toastCopy: { color: THEME.onAccent, fontFamily: FONTS.semi, fontSize: 12, marginTop: 2, opacity: 0.8 },
 });
