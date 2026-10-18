@@ -20,13 +20,14 @@ import type { Difficulty, MissionEdits, MissionTemplate, PackId } from './gameLo
 import { confirmAction } from './dialogs';
 import { haptic } from './haptics';
 import { ROW_LAYOUT, Toast } from './motion';
-import { FONTS, RADIUS, THEME, TONE_COLORS, TONE_CYCLE } from './theme';
-import { Eyebrow, PrimaryButton } from './ui';
+import { CLAY, FONTS, RADIUS, THEME, TONE_COLORS, TONE_CYCLE } from './theme';
+import { Eyebrow, Icon, PrimaryButton } from './ui';
 
 type Tab = 'mine' | PackId;
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard'];
 const DIFFICULTY_LABEL: Record<Difficulty, string> = { easy: 'EASY', medium: 'MEDIUM', hard: 'HARD' };
 const DIFFICULTY_COLOR: Record<Difficulty, string> = { easy: THEME.lime, medium: THEME.yellow, hard: THEME.pink };
+const DIFFICULTY_TEXT_COLOR: Record<Difficulty, string> = { easy: THEME.limeText, medium: THEME.yellowText, hard: THEME.pinkText };
 
 // "Get {t} to dance" shows as "Get [THEM] to dance", with the target as a pill.
 function MissionText({ template }: { template: string }) {
@@ -238,7 +239,7 @@ export function MissionLibrary({
                   <View style={styles.rowLine}>
                     <Text style={[styles.missionText, styles.flex]}>{mission}</Text>
                     <Pressable accessibilityLabel="Edit" hitSlop={8} onPress={() => startEdit(id, mission, 'medium')} style={styles.icon}>
-                      <Text style={styles.iconText}>✎</Text>
+                      <Icon color={THEME.text} name="edit-2" size={18} />
                     </Pressable>
                     <Pressable
                       accessibilityLabel="Delete"
@@ -250,7 +251,7 @@ export function MissionLibrary({
                       }}
                       style={styles.icon}
                     >
-                      <Text style={styles.iconText}>🗑</Text>
+                      <Icon color={THEME.bad} name="trash-2" size={18} />
                     </Pressable>
                   </View>
                 )}
@@ -283,7 +284,7 @@ export function MissionLibrary({
             ) : (
               <View style={styles.rowLine}>
                 <View style={styles.flex}>
-                  <Text style={[styles.diffTag, { color: DIFFICULTY_COLOR[template.difficulty] }]}>
+                  <Text style={[styles.diffTag, { color: DIFFICULTY_TEXT_COLOR[template.difficulty] }]}>
                     {DIFFICULTY_LABEL[template.difficulty]}
                   </Text>
                   <MissionText template={template.text} />
@@ -294,10 +295,10 @@ export function MissionLibrary({
                   onPress={() => startEdit(template.id, toEditableText(template.text), template.difficulty)}
                   style={styles.icon}
                 >
-                  <Text style={styles.iconText}>✎</Text>
+                  <Icon color={THEME.text} name="edit-2" size={18} />
                 </Pressable>
                 <Pressable accessibilityLabel="Delete" hitSlop={8} onPress={() => deleteMission(template)} style={styles.icon}>
-                  <Text style={styles.iconText}>🗑</Text>
+                  <Icon color={THEME.bad} name="trash-2" size={18} />
                 </Pressable>
               </View>
             )}
@@ -366,8 +367,9 @@ const styles = StyleSheet.create({
   },
   tabText: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 12, letterSpacing: 0.6 },
   tabTextOn: { color: THEME.onAccent },
-  addCard: { backgroundColor: THEME.surfaceHi, borderRadius: RADIUS.lg, padding: 16, borderWidth: 2, borderColor: THEME.lime },
-  addTitle: { color: THEME.lime, fontFamily: FONTS.black, fontSize: 13, letterSpacing: 1 },
+  addCard: {
+    boxShadow: CLAY.card, backgroundColor: THEME.surfaceHi, borderRadius: RADIUS.lg, padding: 16, borderWidth: 2, borderColor: THEME.lime },
+  addTitle: { color: THEME.limeText, fontFamily: FONTS.black, fontSize: 13, letterSpacing: 1 },
   addHint: { color: THEME.muted, fontFamily: FONTS.medium, fontSize: 12, marginTop: 2 },
   input: {
     marginTop: 10,
@@ -385,7 +387,8 @@ const styles = StyleSheet.create({
   diffChip: { flex: 1, minHeight: 36, borderRadius: RADIUS.sm, backgroundColor: THEME.surfaceLo, alignItems: 'center', justifyContent: 'center' },
   diffText: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 0.8 },
   diffTextOn: { color: THEME.onAccent },
-  row: { backgroundColor: THEME.surface, borderRadius: RADIUS.md, padding: 14, marginTop: 10, borderWidth: 1, borderColor: THEME.line },
+  row: {
+    boxShadow: CLAY.card, backgroundColor: THEME.surface, borderRadius: RADIUS.md, padding: 14, marginTop: 10, borderWidth: 1, borderColor: THEME.line },
   rowLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   diffTag: { fontFamily: FONTS.black, fontSize: 10, letterSpacing: 1 },
   missionText: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 15, lineHeight: 21 },
@@ -399,9 +402,9 @@ const styles = StyleSheet.create({
   saveText: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 1 },
   empty: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 14, textAlign: 'center', marginTop: 22 },
   link: { alignItems: 'center', paddingVertical: 18 },
-  linkText: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 1 },
+  linkText: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 1 },
   undoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   undoText: { color: THEME.onAccent, fontFamily: FONTS.bold, fontSize: 14 },
   undoButton: { paddingHorizontal: 14, minHeight: 36, borderRadius: RADIUS.pill, backgroundColor: THEME.onAccent, justifyContent: 'center' },
-  undoButtonText: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 1 },
+  undoButtonText: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 1 },
 });

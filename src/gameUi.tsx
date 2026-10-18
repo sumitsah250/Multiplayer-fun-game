@@ -18,7 +18,7 @@ import {
 import type { Callout, ChaosEvent, Player, RoundOutcome } from './gameLogic';
 import { haptic } from './haptics';
 import { ChaosSlot, CountUp, Entrance, HoldToReveal, PopOnChange, ROW_LAYOUT, StreakFlame } from './motion';
-import { FONTS, RADIUS, THEME } from './theme';
+import { CLAY, FONTS, RADIUS, THEME } from './theme';
 import { Eyebrow, PrimaryButton } from './ui';
 
 export function ChaosEventCard({
@@ -346,6 +346,7 @@ export function Leaderboard({ entries }: { entries: LeaderEntry[] }) {
 
 const styles = StyleSheet.create({
   chaosCard: {
+    boxShadow: CLAY.card,
     width: '100%',
     backgroundColor: THEME.surfaceHi,
     borderRadius: RADIUS.lg,
@@ -354,10 +355,10 @@ const styles = StyleSheet.create({
     padding: 16,
     marginTop: 14,
   },
-  chaosName: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 26, lineHeight: 32, marginTop: 4, letterSpacing: 0.5 },
+  chaosName: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 26, lineHeight: 32, marginTop: 4, letterSpacing: 0.5 },
   chaosRule: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 15, lineHeight: 20, marginTop: 4 },
   chaosDetail: { color: THEME.muted, fontFamily: FONTS.medium, fontSize: 13, lineHeight: 18, marginTop: 4 },
-  bounty: { color: THEME.pink, fontFamily: FONTS.black, fontSize: 14, marginTop: 8 },
+  bounty: { color: THEME.pinkText, fontFamily: FONTS.black, fontSize: 14, marginTop: 8 },
   tag: {
     overflow: 'hidden',
     borderRadius: RADIUS.pill,
@@ -374,7 +375,7 @@ const styles = StyleSheet.create({
   tagAgent: { backgroundColor: THEME.cyan },
   missionTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   missionText: { color: THEME.text, fontFamily: FONTS.black, fontSize: 26, lineHeight: 31, marginTop: 12 },
-  missionNote: { color: THEME.cyan, fontFamily: FONTS.bold, fontSize: 13, lineHeight: 18, marginTop: 8 },
+  missionNote: { color: THEME.cyanText, fontFamily: FONTS.bold, fontSize: 13, lineHeight: 18, marginTop: 8 },
   missionHint: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13, lineHeight: 18, marginTop: 8, marginBottom: 2 },
   hint: {
     color: THEME.onAccent,

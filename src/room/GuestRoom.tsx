@@ -26,7 +26,7 @@ import { useSound } from '../sounds';
 import { BustedOverlay, Entrance, HoldToReveal, Kickoff, Sheet, Stamp, TONES, TimerRing, Toast } from '../motion';
 import type { BustEvent } from '../motion';
 import { updateLifetime } from '../storage';
-import { FONTS, RADIUS, THEME } from '../theme';
+import { CLAY, FONTS, RADIUS, THEME } from '../theme';
 import { Eyebrow, KeepScreenAwake, PrimaryButton, ProtectMissions } from '../ui';
 import { closeRoomChannel, openRoomChannel } from './client';
 import {
@@ -427,7 +427,7 @@ export function GuestRoom({
           ) : (
             <PrimaryButton
               disabled={seenRound !== roundId}
-              label={seenRound === roundId ? 'GOT IT  ✓' : 'HOLD THE CARD FIRST'}
+              icon={seenRound === roundId ? 'check' : 'lock'} label={seenRound === roundId ? 'GOT IT' : 'HOLD THE CARD FIRST'}
               onPress={confirmReady}
             />
           )}
@@ -482,11 +482,11 @@ export function GuestRoom({
           )}
           <PrimaryButton
             disabled={!canCallOut(snapshot.callouts, me.name)}
-            label={canCallOut(snapshot.callouts, me.name) ? '🚨  CALL IT OUT' : 'CALL-OUT USED'}
+            icon="alert-octagon" label={canCallOut(snapshot.callouts, me.name) ? 'CALL IT OUT' : 'CALL-OUT USED'}
             onPress={() => openSheet('callout')}
           />
           <PrimaryButton
-            label={hintsOpen ? '💡  HINT / PEEK MY MISSION' : '🤫  PEEK MY MISSION'}
+            icon={hintsOpen ? 'help-circle' : 'eye'} label={hintsOpen ? 'HINT / PEEK MY MISSION' : 'PEEK MY MISSION'}
             onPress={() => openSheet('peek')}
             secondary
           />
@@ -606,8 +606,9 @@ const styles = StyleSheet.create({
   footnote: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13, textAlign: 'center', marginTop: 16, marginBottom: 8 },
   card,
   memberRow: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 16, paddingTop: 10 },
-  chaosCard: { ...card, backgroundColor: THEME.surfaceHi, borderWidth: 2, borderColor: THEME.yellow, marginTop: 14 },
-  chaosName: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 16 },
+  chaosCard: {
+    boxShadow: CLAY.card, ...card, backgroundColor: THEME.surfaceHi, borderWidth: 2, borderColor: THEME.yellow, marginTop: 14 },
+  chaosName: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 16 },
   chaosRule: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 14, lineHeight: 19, marginTop: 4 },
   swapCard: { backgroundColor: THEME.violet, borderRadius: RADIUS.lg, padding: 16, marginTop: 12 },
   swapText: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 15, lineHeight: 20, marginTop: 4 },
@@ -622,7 +623,7 @@ const styles = StyleSheet.create({
   voting: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 0.8 },
   points: { color: THEME.good, fontFamily: FONTS.black, fontSize: 14 },
   fail: { color: THEME.bad, fontFamily: FONTS.black, fontSize: 12 },
-  creative: { color: THEME.pink, fontFamily: FONTS.black, fontSize: 13, marginTop: 10 },
+  creative: { color: THEME.pinkText, fontFamily: FONTS.black, fontSize: 13, marginTop: 10 },
   toastTitle: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 15 },
   toastCopy: { color: THEME.onAccent, fontFamily: FONTS.semi, fontSize: 12, marginTop: 2, opacity: 0.8 },
 });

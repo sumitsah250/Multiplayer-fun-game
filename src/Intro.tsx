@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   sticker: { position: 'absolute' },
   words: { position: 'absolute', alignItems: 'center', transform: [{ translateY: 40 }] },
   title: { color: THEME.text, fontFamily: FONTS.black, fontSize: 52, lineHeight: 60, letterSpacing: 2 },
-  titleAccent: { color: THEME.yellow },
+  titleAccent: { color: THEME.primary },
   tagline: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 17, marginTop: 2 },
   credit: {
     position: 'absolute',

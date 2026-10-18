@@ -33,7 +33,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { CHAOS_EVENTS } from './gameLogic';
 import { haptic, hapticPattern } from './haptics';
 import { useSound } from './sounds';
-import { FONTS, RADIUS, THEME } from './theme';
+import { CLAY, FONTS, RADIUS, THEME } from './theme';
 
 export const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 export const EASE_IN_OUT = Easing.bezier(0.77, 0, 0.175, 1);
@@ -48,8 +48,8 @@ function exitOnNative<T>(animation: T): T | undefined {
 export const TONES = {
   green: THEME.good,
   greenInk: THEME.good,
-  yellow: THEME.yellow,
-  orange: THEME.orange,
+  yellow: THEME.yellowEdge,
+  orange: THEME.orangeEdge,
   red: THEME.bad,
 };
 
@@ -250,7 +250,7 @@ export function TimerRing({
   return (
     <Animated.View style={[{ width: size, height: size }, motionStyles.ringWrap, beatStyle]}>
       <Svg height={size} style={StyleSheet.absoluteFill} width={size}>
-        <Circle cx={size / 2} cy={size / 2} fill="none" r={radius} stroke="rgba(255,255,255,0.12)" strokeWidth={stroke} />
+        <Circle cx={size / 2} cy={size / 2} fill="none" r={radius} stroke={THEME.line} strokeWidth={stroke} />
         <AnimatedCircle
           animatedProps={ringProps}
           cx={size / 2}
@@ -546,7 +546,7 @@ function BustedContent({ event, onDone, silent }: { event: BustEvent; onDone: ()
           style={[StyleSheet.absoluteFill, { backgroundColor: event.correct ? TONES.red : THEME.bgDeep }, flashStyle]}
         />
         <Animated.View accessibilityLiveRegion="assertive" style={[motionStyles.bustCard, cardStyle]}>
-          <Stamp color={event.correct ? TONES.red : THEME.yellow} text={event.correct ? 'BUSTED!' : 'WRONG CALL'} />
+          <Stamp color={event.correct ? TONES.red : THEME.yellowText} text={event.correct ? 'BUSTED!' : 'WRONG CALL'} />
           <Text style={motionStyles.bustTitle}>
             {event.correct ? `${event.accuser} caught ${event.suspect}!` : `${event.accuser} accused ${event.suspect}…`}
           </Text>
@@ -650,7 +650,8 @@ export const ROW_LAYOUT = LinearTransition.duration(320).easing(EASE_IN_OUT);
 
 export function Entrance({ index = 0, children, style }: { index?: number; children: ReactNode; style?: StyleProp<ViewStyle> }) {
   return (
-    <Animated.View entering={FadeInDown.duration(260).delay(index * 60).easing(EASE_OUT)} style={style}>
+    // A soft spring with a little overshoot, like clay settling into place.
+    <Animated.View entering={FadeInDown.springify().damping(15).stiffness(170).delay(Math.min(index, 8) * 55)} style={style}>
       {children}
     </Animated.View>
   );
@@ -789,10 +790,11 @@ export function PopIn({ children, delay = 0 }: { children: ReactNode; delay?: nu
 // ---- Kickoff ----------------------------------------------------------------
 // "3, 2, 1… LET'S START THE CHAOS!" before every round. The round deadline
 // already includes this time (KICKOFF_SECONDS), so nobody loses a second.
+// Each count lands as a big disc of party-coloured clay.
 const KICKOFF_STEPS = [
-  { text: '3', color: THEME.yellow },
-  { text: '2', color: THEME.pink },
-  { text: '1', color: THEME.cyan },
+  { text: '3', face: THEME.yellow, edge: THEME.yellowEdge },
+  { text: '2', face: THEME.pink, edge: THEME.pinkEdge },
+  { text: '1', face: THEME.cyan, edge: THEME.cyanEdge },
 ];
 const STEP_MS = 750;
 
@@ -845,7 +847,18 @@ export function Kickoff({ onDone, silent = false }: { onDone: () => void; silent
         </Animated.View>
       ) : (
         <PopIn key={step}>
-          <Text style={[motionStyles.kickoffNumber, { color: KICKOFF_STEPS[step].color }]}>{KICKOFF_STEPS[step].text}</Text>
+          <View
+            style={[
+              motionStyles.kickoffDisc,
+              {
+                backgroundColor: KICKOFF_STEPS[step].face,
+                borderColor: KICKOFF_STEPS[step].edge,
+                boxShadow: `0px 14px 0px ${KICKOFF_STEPS[step].edge}, ${CLAY.gloss}`,
+              },
+            ]}
+          >
+            <Text style={motionStyles.kickoffNumber}>{KICKOFF_STEPS[step].text}</Text>
+          </View>
         </PopIn>
       )}
       {!go && <Text style={motionStyles.kickoffHint}>GET READY…</Text>}
@@ -883,11 +896,12 @@ const motionStyles = StyleSheet.create({
   lights: { flexDirection: 'row', gap: 10, marginTop: 32 },
   light: { width: 12, height: 12, borderRadius: 6 },
   holdCard: {
+    boxShadow: CLAY.card,
     width: '100%',
     backgroundColor: THEME.surfaceHi,
     borderRadius: RADIUS.lg,
     borderWidth: 3,
-    borderColor: THEME.yellow,
+    borderColor: THEME.pinkEdge,
     padding: 20,
     marginBottom: 10,
     overflow: 'hidden',
@@ -917,12 +931,13 @@ const motionStyles = StyleSheet.create({
   swipeNo: { right: 14, borderColor: TONES.red, transform: [{ rotate: '10deg' }] },
   stamp: { alignSelf: 'flex-start', borderWidth: 3, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 2 },
   stampText: { fontFamily: FONTS.black, fontSize: 16, letterSpacing: 1.5 },
-  countUp: { padding: 0, margin: 0, color: THEME.yellow, fontFamily: FONTS.black, fontSize: 14, textAlign: 'right', minWidth: 84 },
+  countUp: { padding: 0, margin: 0, color: THEME.secondary, fontFamily: FONTS.black, fontSize: 14, textAlign: 'right', minWidth: 84 },
   flameRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginRight: 8 },
-  flameCount: { color: THEME.orange, fontFamily: FONTS.black, fontSize: 12 },
+  flameCount: { color: THEME.orangeText, fontFamily: FONTS.black, fontSize: 12 },
   fizzle: { fontSize: 15, marginRight: 8 },
   bustBackdrop: { backgroundColor: THEME.scrim, alignItems: 'center', justifyContent: 'center', padding: 24 },
   bustCard: {
+    boxShadow: CLAY.card,
     width: '100%',
     backgroundColor: THEME.surfaceHi,
     borderRadius: RADIUS.lg,
@@ -932,7 +947,7 @@ const motionStyles = StyleSheet.create({
     gap: 8,
   },
   bustTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 28, lineHeight: 32, marginTop: 6 },
-  bustMission: { color: THEME.yellow, fontFamily: FONTS.bold, fontSize: 16, lineHeight: 22 },
+  bustMission: { color: THEME.primary, fontFamily: FONTS.bold, fontSize: 16, lineHeight: 22 },
   bustCopy: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 14, lineHeight: 20 },
   bustDismiss: { color: THEME.dim, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 1.2, marginTop: 8 },
   backdrop: { backgroundColor: THEME.scrim },
@@ -973,10 +988,19 @@ const motionStyles = StyleSheet.create({
     paddingVertical: 14,
   },
   kickoff: { backgroundColor: THEME.bgDeep, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  kickoffNumber: { fontFamily: FONTS.black, fontSize: 160, lineHeight: 180, textAlign: 'center' },
+  kickoffDisc: {
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    borderWidth: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  kickoffNumber: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 130, lineHeight: 150, textAlign: 'center' },
   kickoffHint: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 14, letterSpacing: 3, marginTop: 4 },
   kickoffGo: { alignItems: 'center' },
   kickoffEmoji: { fontSize: 64 },
-  kickoffTitle: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 46, lineHeight: 50, textAlign: 'center', marginTop: 8 },
+  kickoffTitle: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 46, lineHeight: 50, textAlign: 'center', marginTop: 8 },
   kickoffCopy: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 18, marginTop: 10 },
 });

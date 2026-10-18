@@ -1,44 +1,65 @@
 // Party Spy's design system: one place for colours, fonts and shapes, so every
-// screen looks like the same game. "Party night": deep violet with bright
-// party colours, chunky rounded shapes, and the Baloo 2 typeface (playful, and
-// it covers Devanagari for Hindi and Nepali missions).
+// screen looks like the same game. "Candy clay": a soft blush background,
+// puffy white cards and chunky party-coloured buttons that look like
+// squeezable clay (thick borders, a solid bottom edge and soft shadows).
+// Nunito for headings, DM Sans for reading text. Full design notes live in
+// design-system/party-spy/MASTER.md.
+//
+// Contrast (WCAG): text and muted pass 4.5:1 on every background; `dim` is
+// only for large or decorative text. Dark `onAccent` text passes on every
+// party colour.
 
 export const THEME = {
   // Backgrounds, from the page down to raised cards.
-  bgTop: '#2A0E6E',
-  bg: '#1D0B4E',
-  bgDeep: '#130733',
-  surface: '#2E1670',
-  surfaceHi: '#3C2088',
-  surfaceLo: '#24105C',
-  line: 'rgba(255,255,255,0.13)',
-  lineStrong: 'rgba(255,255,255,0.26)',
-  scrim: 'rgba(10,3,30,0.62)',
+  bgTop: '#FFF6FB',
+  bg: '#FDF2F8',
+  bgDeep: '#F9E3F0',
+  surface: '#FFFFFF',
+  surfaceHi: '#FFF8FC',
+  surfaceLo: '#F6E6F0',
+  line: '#F1DAE8',
+  lineStrong: '#E4C2D7',
+  scrim: 'rgba(42,18,64,0.45)',
 
-  // Text on the dark backgrounds.
-  text: '#FFFFFF',
-  muted: '#CBBDF5',
-  dim: '#9A87D8',
-  // Text on the bright accent colours.
-  onAccent: '#1D0B4E',
+  // Text.
+  text: '#2A1240',
+  muted: '#6B5880',
+  dim: '#8C7AA3',
+  // Text on the bright party colours.
+  onAccent: '#2A1240',
 
-  // Party colours. Each has an "edge" (the darker 3D bottom of buttons/tiles).
-  yellow: '#FFD23F',
-  yellowEdge: '#C79600',
-  pink: '#FF4FA3',
-  pinkEdge: '#BD1C6E',
-  lime: '#B8F35A',
-  limeEdge: '#78AE1F',
-  cyan: '#3DDCFF',
-  cyanEdge: '#0C9CC2',
-  orange: '#FF8A4C',
-  orangeEdge: '#C4561C',
-  violet: '#9B6BFF',
-  violetEdge: '#6435D6',
+  // Party colours. Each has an "edge": the darker clay underside of buttons/tiles.
+  yellow: '#FFC93C',
+  yellowEdge: '#E0A100',
+  pink: '#FF7AB8',
+  pinkEdge: '#E0458F',
+  lime: '#A3E635',
+  limeEdge: '#6FAE14',
+  cyan: '#5EE0F5',
+  cyanEdge: '#1BAFCB',
+  orange: '#FFAA6B',
+  orangeEdge: '#E8752A',
+  violet: '#C3A8FF',
+  violetEdge: '#8E62F0',
 
-  // Feedback.
-  good: '#47E58F',
-  bad: '#FF5C6C',
+  // Party colours deep enough for text and icons on light backgrounds
+  // (4.5:1 or better on bg, surface and surfaceLo).
+  yellowText: '#8F5600',
+  pinkText: '#BE185D',
+  limeText: '#3F6212',
+  cyanText: '#0B6577',
+  orangeText: '#B23B0B',
+  violetText: '#6D28D9',
+
+  // Brand accents.
+  primary: '#BE185D',
+  secondary: '#6D28D9',
+
+  // Feedback (text-safe on light backgrounds).
+  good: '#15803D',
+  bad: '#C62828',
+  goodSoft: '#DCFCE7',
+  badSoft: '#FFE1E1',
 };
 
 export type Tone = 'yellow' | 'pink' | 'lime' | 'cyan' | 'orange' | 'violet';
@@ -55,13 +76,26 @@ export const TONE_COLORS: Record<Tone, { face: string; edge: string }> = {
 // A cycle of tones for lists (players, categories) so they stay colourful.
 export const TONE_CYCLE: Tone[] = ['yellow', 'pink', 'cyan', 'lime', 'orange', 'violet'];
 
-// Baloo 2 is a static family: pick the weight by name (fontWeight isn't used).
+// Static font families: pick the weight by name (fontWeight isn't used).
+// regular/medium are DM Sans (reading text); semi/bold/black are Nunito
+// (labels and headings).
 export const FONTS = {
-  regular: 'Baloo2_400Regular',
-  medium: 'Baloo2_500Medium',
-  semi: 'Baloo2_600SemiBold',
-  bold: 'Baloo2_700Bold',
-  black: 'Baloo2_800ExtraBold',
+  regular: 'DMSans_400Regular',
+  medium: 'DMSans_500Medium',
+  semi: 'Nunito_700Bold',
+  bold: 'Nunito_800ExtraBold',
+  black: 'Nunito_900Black',
 };
 
-export const RADIUS = { sm: 12, md: 18, lg: 24, pill: 999 };
+export const RADIUS = { sm: 14, md: 20, lg: 26, pill: 999 };
+
+// Clay depth: the solid "underside" height of buttons and tiles, and the soft
+// shadows that make cards look puffy. boxShadow works on Android, iOS and web.
+export const CLAY = {
+  edge: 6,
+  border: 3,
+  card: '0px 10px 24px rgba(190, 24, 93, 0.10), inset 0px -4px 0px rgba(190, 24, 93, 0.05)',
+  raised: '0px 14px 30px rgba(109, 40, 217, 0.16), inset 0px -4px 0px rgba(42, 18, 64, 0.06)',
+  // Glossy highlight on top of coloured clay.
+  gloss: 'inset 0px 3px 0px rgba(255, 255, 255, 0.55), inset 0px -3px 0px rgba(42, 18, 64, 0.10)',
+};

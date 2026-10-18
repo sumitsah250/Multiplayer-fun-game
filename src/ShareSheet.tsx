@@ -113,11 +113,11 @@ export function ShareOptions({
       </View>
       <PrimaryButton
         disabled={busy}
-        label={busy ? 'MAKING THE PICTURE…' : '🖼️  SHARE AS A PICTURE (INSTAGRAM, SNAPCHAT…)'}
+        icon="image" label={busy ? 'MAKING THE PICTURE…' : 'SHARE AS A PICTURE'}
         onPress={() => void shareImage()}
         tone="pink"
       />
-      <PrimaryButton label="⋯  MORE OPTIONS" onPress={() => void systemShare()} secondary />
+      <PrimaryButton icon="more-horizontal" label="MORE OPTIONS" onPress={() => void systemShare()} secondary />
       {status && (
         <Text accessibilityLiveRegion="polite" style={styles.status}>
           {status}
@@ -136,5 +136,5 @@ const styles = StyleSheet.create({
   face: { borderRadius: RADIUS.md, minHeight: 82, alignItems: 'center', justifyContent: 'center', padding: 8 },
   emoji: { fontSize: 28 },
   label: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 12, marginTop: 2, textAlign: 'center' },
-  status: { color: THEME.yellow, fontFamily: FONTS.bold, fontSize: 14, textAlign: 'center', marginTop: 12 },
+  status: { color: THEME.primary, fontFamily: FONTS.bold, fontSize: 14, textAlign: 'center', marginTop: 12 },
 });

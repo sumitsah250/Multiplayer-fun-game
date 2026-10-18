@@ -1,11 +1,5 @@
-import {
-  Baloo2_400Regular,
-  Baloo2_500Medium,
-  Baloo2_600SemiBold,
-  Baloo2_700Bold,
-  Baloo2_800ExtraBold,
-  useFonts,
-} from '@expo-google-fonts/baloo-2';
+import { DMSans_400Regular, DMSans_500Medium } from '@expo-google-fonts/dm-sans';
+import { Nunito_700Bold, Nunito_800ExtraBold, Nunito_900Black, useFonts } from '@expo-google-fonts/nunito';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -86,11 +80,11 @@ import type {
   RoundRecord,
 } from './src/gameLogic';
 import { BRAND } from './src/brand';
-import { confirmAction, showMessage } from './src/dialogs';
+import { DialogHost, confirmAction, showMessage } from './src/dialogs';
 import { Intro } from './src/Intro';
 import { MissionLibrary } from './src/MissionLibrary';
 import { ShareOptions } from './src/ShareSheet';
-import { FONTS, RADIUS, THEME, TONE_COLORS, TONE_CYCLE } from './src/theme';
+import { CLAY, FONTS, RADIUS, THEME, TONE_COLORS, TONE_CYCLE } from './src/theme';
 import { AvatarPicker, CallOutPanel, ChaosEventCard, DifficultyTag, Leaderboard, MissionBody, PeekPanel } from './src/gameUi';
 import { haptic, hapticPattern, setHapticsEnabled } from './src/haptics';
 import { SoundProvider, useSound } from './src/sounds';
@@ -113,7 +107,7 @@ import {
   Wobble,
 } from './src/motion';
 import type { BustEvent } from './src/motion';
-import { COLORS, Eyebrow, KeepScreenAwake, PartyTile, PrimaryButton, ProtectMissions } from './src/ui';
+import { COLORS, Eyebrow, Icon, IconButton, KeepScreenAwake, PartyTile, PrimaryButton, ProtectMissions } from './src/ui';
 import { GuestRoom } from './src/room/GuestRoom';
 import { roomsConfigured } from './src/room/client';
 import { everyoneReady, isReady, isValidRoomCode, makeMemberId, makeRoomCode, normalizeRoomCode } from './src/room/protocol';
@@ -309,11 +303,11 @@ SplashScreen.preventAutoHideAsync().catch(() => undefined);
 export default function App() {
   const [introDone, setIntroDone] = useState(false);
   const [fontsLoaded] = useFonts({
-    Baloo2_400Regular,
-    Baloo2_500Medium,
-    Baloo2_600SemiBold,
-    Baloo2_700Bold,
-    Baloo2_800ExtraBold,
+    DMSans_400Regular,
+    DMSans_500Medium,
+    Nunito_700Bold,
+    Nunito_800ExtraBold,
+    Nunito_900Black,
   });
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hide();
@@ -332,6 +326,7 @@ export default function App() {
         )}
       </View>
       {fontsLoaded && !introDone && <Intro onDone={() => setIntroDone(true)} />}
+      {fontsLoaded && <DialogHost />}
     </GestureHandlerRootView>
   );
 }
@@ -1210,24 +1205,15 @@ function Game() {
 
   return (
     <SafeAreaView style={styles.app}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       {stage === 'playing' && <KeepScreenAwake />}
       {stage === 'deal' && <ProtectMissions />}
       {sheet && <ProtectMissions tag="mission-sheet" />}
       <View style={styles.topBar}>
         {stage !== 'home' && (
-          <Pressable
-            accessibilityLabel="Back"
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={() => {
-              haptic('tap');
-              goBack();
-            }}
-            style={styles.headerBack}
-          >
-            <Text style={styles.headerBackText}>←</Text>
-          </Pressable>
+          <View style={styles.headerBack}>
+            <IconButton icon="arrow-left" label="Back" onPress={goBack} />
+          </View>
         )}
         <View style={styles.brand}>
           <View style={styles.brandMark}>
@@ -1235,18 +1221,14 @@ function Game() {
           </View>
           <Text style={styles.brandName}>{BRAND.name}</Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={soundEnabled ? 'Mute sound effects' : 'Enable sound effects'}
-          accessibilityState={{ selected: soundEnabled }}
+        <IconButton
+          icon={soundEnabled ? 'volume-2' : 'volume-x'}
+          label={soundEnabled ? 'Mute sound effects' : 'Enable sound effects'}
           onPress={() => {
             setSoundEnabled(!soundEnabled);
             if (!soundEnabled) setTimeout(() => play('land'), 0);
           }}
-          style={styles.soundToggle}
-        >
-          <Text style={styles.soundToggleText}>{soundEnabled ? '🔊' : '🔇'}</Text>
-        </Pressable>
+        />
       </View>
 
       <Animated.View
@@ -1257,8 +1239,9 @@ function Game() {
       >
       {stage === 'home' && (
         <ScrollView contentContainerStyle={styles.homeContent}>
+          <Entrance index={0}>
           <LinearGradient
-            colors={[THEME.pink, THEME.violet]}
+            colors={['#FFC4E0', '#DCCBFF']}
             end={{ x: 1, y: 1 }}
             start={{ x: 0, y: 0 }}
             style={styles.hero}
@@ -1282,11 +1265,16 @@ function Game() {
               <RotatingText lines={HOME_TEASERS} style={styles.teaserText} />
             </View>
           </LinearGradient>
+          </Entrance>
 
-          <PrimaryButton label="▶  PLAY NOW" onPress={() => setStage('setup')} tone="yellow" />
-          <PrimaryButton label="📱  EVERYONE ON THEIR OWN PHONE" onPress={() => setStage('room-start')} tone="cyan" />
+          <Entrance index={1}>
+            <PrimaryButton icon="play" label="PLAY NOW" onPress={() => setStage('setup')} tone="yellow" />
+          </Entrance>
+          <Entrance index={2}>
+            <PrimaryButton icon="smartphone" label="PLAY ON EVERY PHONE" onPress={() => setStage('room-start')} tone="cyan" />
+          </Entrance>
 
-          <View style={styles.tileRow}>
+          <Entrance index={3} style={styles.tileRow}>
             <PartyTile
               accessibilityLabel={`Mission library, ${library.length + customMissions.length} missions`}
               onPress={() => openLibrary('home')}
@@ -1302,14 +1290,14 @@ function Game() {
               <Text style={styles.tileTitle}>HALL OF FAME</Text>
               <Text style={styles.tileSub}>badges & stats</Text>
             </PartyTile>
-          </View>
+          </Entrance>
 
           <Text style={styles.sectionTitle}>PICK A VIBE</Text>
           <ScrollView contentContainerStyle={styles.vibeRow} horizontal showsHorizontalScrollIndicator={false}>
             {PACK_OPTIONS.map((pack, index) => (
+              <Entrance index={4 + index} key={pack.id}>
               <PartyTile
                 accessibilityLabel={`Play with ${pack.title} missions`}
-                key={pack.id}
                 onPress={() => playVibe(pack.id)}
                 style={styles.vibe}
                 tone={TONE_CYCLE[index % TONE_CYCLE.length]}
@@ -1318,6 +1306,7 @@ function Game() {
                 <Text style={styles.vibeTitle}>{pack.title}</Text>
                 <Text style={styles.vibeCount}>{library.filter((template) => template.pack === pack.id).length} missions</Text>
               </PartyTile>
+              </Entrance>
             ))}
           </ScrollView>
 
@@ -1357,9 +1346,14 @@ function Game() {
           <Text style={styles.pageTitle}>Hall of Fame.</Text>
           <Text style={styles.pageCopy}>Lifetime stats and badges. Each badge unlocks a new avatar.</Text>
           {fameEntries.length === 0 && (
-            <View style={styles.roomCard}>
-              <Text style={styles.roomCardCopy}>Nobody’s here yet. Finish a round and the legends start forming.</Text>
-            </View>
+            <Entrance style={styles.emptyCard}>
+              <Bob distance={6}>
+                <Text style={styles.emptyEmoji}>🏆</Text>
+              </Bob>
+              <Text style={styles.emptyTitle}>No legends yet</Text>
+              <Text style={styles.emptyCopy}>Finish a round and the stats, streaks and badges start piling up here.</Text>
+              <PrimaryButton icon="play" label="PLAY A ROUND" onPress={() => setStage('setup')} tone="yellow" />
+            </Entrance>
           )}
           {fameEntries.map((stats, index) => {
             const earned = new Set(earnedBadges(stats).map((badge) => badge.id));
@@ -1441,7 +1435,7 @@ function Game() {
                       Jump back into room {lastRoom.code} as {lastRoom.name}. Your mission and seat are still there.
                     </Text>
                     <PrimaryButton
-                      label={`REJOIN ${lastRoom.code}  →`}
+                      icon="log-in" label={`REJOIN ${lastRoom.code}`}
                       onPress={() =>
                         enterGuestRoom({
                           code: lastRoom.code,
@@ -1476,7 +1470,7 @@ function Game() {
                   />
                 </View>
                 <PrimaryButton
-                  label="HOST A ROOM  →"
+                  icon="radio" label="HOST A ROOM"
                   disabled={!roomName}
                   onPress={createRoom}
                 />
@@ -1498,7 +1492,7 @@ function Game() {
                   />
                 </View>
                 <PrimaryButton
-                  label="JOIN ROOM"
+                  icon="log-in" label="JOIN ROOM"
                   disabled={!roomName || !isValidRoomCode(roomCode)}
                   onPress={joinRoom}
                   secondary
@@ -1626,7 +1620,7 @@ function Game() {
                     }}
                     style={styles.removeButton}
                   >
-                    <Text style={styles.removeButtonText}>×</Text>
+                    <Icon color={THEME.muted} name="x" size={20} />
                   </Pressable>
                 )}
               </View>
@@ -1656,11 +1650,11 @@ function Game() {
           <View style={styles.modeBlock}>
             <Eyebrow>PICK YOUR KIND OF TROUBLE</Eyebrow>
             <View style={styles.modeList}>
-              {MODE_OPTIONS.map((option) => (
+              {MODE_OPTIONS.map((option, index) => (
+                <Entrance index={index} key={option.id}>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityState={{ selected: selectedMode === option.id }}
-                  key={option.id}
                   onPress={() => {
                     haptic('select');
                     setSelectedMode(option.id);
@@ -1672,8 +1666,11 @@ function Game() {
                     <Text style={styles.modeTitle}>{option.title}</Text>
                     <Text style={styles.modeDescription}>{option.description}</Text>
                   </View>
-                  <Text style={styles.modeCheck}>{selectedMode === option.id ? '●' : '○'}</Text>
+                  <PopOnChange trigger={selectedMode === option.id ? 1 : 0}>
+                    <Icon color={selectedMode === option.id ? THEME.yellowText : THEME.lineStrong} name={selectedMode === option.id ? 'check-circle' : 'circle'} size={26} />
+                  </PopOnChange>
                 </Pressable>
+                </Entrance>
               ))}
             </View>
           </View>
@@ -1781,7 +1778,7 @@ function Game() {
                   : `Needs ${MIN_PLAYERS_FOR_DOUBLE_AGENT}+ players.`}
               </Text>
             </View>
-            <Text style={styles.modeCheck}>{doubleAgent && doubleAgentAllowed ? '●' : '○'}</Text>
+            <Icon color={doubleAgent && doubleAgentAllowed ? THEME.yellowText : THEME.lineStrong} name={doubleAgent && doubleAgentAllowed ? 'check-circle' : 'circle'} size={26} />
           </Pressable>
 
           <PartyTile
@@ -1799,12 +1796,12 @@ function Game() {
                   {customMissions.length ? ` + ${customMissions.length} of your own` : ''} · view, edit or add
                 </Text>
               </View>
-              <Text style={styles.tileArrow}>›</Text>
+              <Icon color={THEME.onAccent} name="chevron-right" size={24} />
             </View>
           </PartyTile>
 
           <PrimaryButton
-            label="DEAL THE MISSIONS  →"
+            icon="layers" label="DEAL THE MISSIONS"
             disabled={!canStart}
             onPress={startDealing}
           />
@@ -1841,7 +1838,7 @@ function Game() {
                 <Text style={styles.readyNote}>✓ You’re ready. Hold the card any time to look again.</Text>
               ) : (
                 <PrimaryButton
-                  label={missionVisible ? 'GOT IT  ✓' : 'HOLD THE CARD FIRST'}
+                  icon={missionVisible ? 'check' : 'lock'} label={missionVisible ? 'GOT IT' : 'HOLD THE CARD FIRST'}
                   disabled={!missionVisible}
                   onPress={finishDealing}
                 />
@@ -1863,7 +1860,7 @@ function Game() {
             })}
           </View>
           <PrimaryButton
-            label="START THE CHAOS  →"
+            icon="zap" label="START THE CHAOS"
             disabled={!everyoneReady(players, hostRoom.readyNames)}
             onPress={startTimer}
           />
@@ -1912,7 +1909,7 @@ function Game() {
             <MissionBody event={chaosEvent} hint={false} outcome={missionOutcome} player={currentPlayer} />
           </HoldToReveal>
           <PrimaryButton
-            label={missionVisible ? 'GOT IT · PASS IT ON  →' : 'HOLD THE CARD TO SEE IT'}
+            icon={missionVisible ? 'arrow-right' : 'lock'} label={missionVisible ? 'GOT IT · PASS IT ON' : 'HOLD THE CARD TO SEE IT'}
             disabled={!missionVisible}
             onPress={finishDealing}
           />
@@ -1955,7 +1952,7 @@ function Game() {
             ))}
           </View>
           <Text style={styles.voteHint}>Think someone’s working on you? Hit “Call it out” during the round.</Text>
-          <PrimaryButton label="START THE CHAOS  →" onPress={startTimer} />
+          <PrimaryButton icon="zap" label="START THE CHAOS" onPress={startTimer} />
         </ScrollView>
       )}
 
@@ -2015,9 +2012,9 @@ function Game() {
             </View>
           )}
           <View style={styles.playButtons}>
-            <PrimaryButton label="🚨  CALL IT OUT" onPress={() => openSheet({ kind: 'callout' })} />
+            <PrimaryButton icon="alert-octagon" label="CALL IT OUT" onPress={() => openSheet({ kind: 'callout' })} />
             <PrimaryButton
-              label={pastHalfway ? '💡  HINT / PEEK MY MISSION' : '🤫  PEEK MY MISSION'}
+              icon={pastHalfway ? 'help-circle' : 'eye'} label={pastHalfway ? 'HINT / PEEK MY MISSION' : 'PEEK MY MISSION'}
               onPress={() => openSheet({ kind: 'peek', names: room ? [room.hostName] : null })}
               secondary
             />
@@ -2032,7 +2029,7 @@ function Game() {
               </View>
             )}
           </View>
-          <PrimaryButton label="END GAME & REVEAL" onPress={finishEarly} secondary />
+          <PrimaryButton icon="flag" label="END GAME & REVEAL" onPress={finishEarly} secondary />
         </ScrollView>
       )}
 
@@ -2128,7 +2125,8 @@ function Game() {
                               onPress={() => setMissionOutcome(player.name, true)}
                               style={[styles.outcomeButton, styles.successButton]}
                             >
-                              <Text style={styles.outcomeText}>✓  THEY DID IT</Text>
+                              <Icon color={THEME.onAccent} name="check" size={18} />
+                              <Text style={styles.outcomeText}>THEY DID IT</Text>
                             </Pressable>
                             <Pressable
                               accessibilityRole="button"
@@ -2137,7 +2135,8 @@ function Game() {
                               onPress={() => setMissionOutcome(player.name, false)}
                               style={[styles.outcomeButton, styles.missedButton]}
                             >
-                              <Text style={styles.outcomeText}>✕  NOPE</Text>
+                              <Icon color={THEME.onAccent} name="x" size={18} />
+                              <Text style={styles.outcomeText}>NOPE</Text>
                             </Pressable>
                           </View>
                           <Text style={styles.swipeHint}>
@@ -2229,13 +2228,13 @@ function Game() {
                 <Leaderboard entries={sessionLeaderboard(false)} />
               </View>
             )}
-            <PrimaryButton label="📣  SHARE THE RESULTS" onPress={() => setStage('share')} />
+            <PrimaryButton icon="share-2" label="SHARE THE RESULTS" onPress={() => setStage('share')} />
             {/* A rematch or wrap-up before every vote is in would drop this round from the scores. */}
             {!allMissionsVoted && (
               <Text style={styles.voteHint}>Vote on every mission to rematch or wrap the session.</Text>
             )}
             <PrimaryButton
-              label="REMATCH · RUN IT BACK"
+              icon="rotate-ccw" label="REMATCH · RUN IT BACK"
               disabled={!allMissionsVoted}
               onPress={rematch}
               secondary
@@ -2302,7 +2301,7 @@ function Game() {
                         {candidate.avatar} {candidate.name.toUpperCase()} · ROUND {candidate.round}
                       </Text>
                       <Text style={styles.historyDetail}>{candidate.mission}</Text>
-                      {crowned && <Stamp color={THEME.yellow} text="👑 MISSION OF THE NIGHT" />}
+                      {crowned && <Stamp color={THEME.yellowText} text="👑 MISSION OF THE NIGHT" />}
                     </Pressable>
                   </Entrance>
                 );
@@ -2325,8 +2324,8 @@ function Game() {
               </View>
             ))}
           </View>
-          <PrimaryButton label="REMATCH · SAME GROUP" onPress={rematch} />
-          <PrimaryButton label="📣  SHARE THE RESULTS" onPress={() => setStage('share')} secondary />
+          <PrimaryButton icon="rotate-ccw" label="REMATCH · SAME GROUP" onPress={rematch} />
+          <PrimaryButton icon="share-2" label="SHARE THE RESULTS" onPress={() => setStage('share')} secondary />
           <Pressable onPress={startFreshSession} style={styles.backLink}>
             <Text style={styles.backLinkText}>START A NEW SESSION</Text>
           </Pressable>
@@ -2339,6 +2338,12 @@ function Game() {
           <Text style={styles.pageTitle}>Make it a moment.</Text>
           <Text style={styles.pageCopy}>Share this vertical reveal card to your socials or group chat.</Text>
           <View ref={shareCardRef} collapsable={false} style={styles.shareCard}>
+            <LinearGradient
+              colors={['#FFB3D6', '#FFD9A8', '#CDB8FF']}
+              end={{ x: 1, y: 1 }}
+              start={{ x: 0, y: 0 }}
+              style={StyleSheet.absoluteFill}
+            />
             <View style={styles.shareCardTop}>
               <Text style={styles.shareLogo}>{BRAND.name}</Text>
               <Text style={styles.shareTag}>{BRAND.tagline.toUpperCase()}</Text>
@@ -2373,8 +2378,8 @@ function Game() {
               <Text style={styles.shareCredit}>{BRAND.credit.toUpperCase()}</Text>
             </View>
           </View>
-          <PrimaryButton label="📣  SHARE" onPress={() => setShareOpen(true)} />
-          <PrimaryButton label="←  BACK TO RESULTS" onPress={() => setStage('reveal')} secondary />
+          <PrimaryButton icon="share-2" label="SHARE" onPress={() => setShareOpen(true)} />
+          <PrimaryButton icon="arrow-left" label="BACK TO RESULTS" onPress={() => setStage('reveal')} secondary />
         </ScrollView>
       )}
       </Animated.View>
@@ -2423,7 +2428,8 @@ function Game() {
 }
 
 // Every value below comes from the theme (src/theme.ts), so the whole game
-// shares one look: deep violet "party night", bright party colours, Baloo 2.
+// shares one look: "candy clay" with a blush background, party-coloured clay
+// buttons, Nunito headings and DM Sans text.
 const card = {
   backgroundColor: THEME.surface,
   borderRadius: RADIUS.lg,
@@ -2441,15 +2447,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   topBar: { height: 58, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brand: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerBack: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
+  headerBack: { marginRight: 10, marginTop: -6 },
   headerBackText: { color: THEME.text, fontFamily: FONTS.black, fontSize: 22, lineHeight: 28 },
   brandMark: {
     width: 36,
@@ -2468,7 +2466,9 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: THEME.surface,
+    borderWidth: 2,
+    borderColor: THEME.line,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2487,7 +2487,7 @@ const styles = StyleSheet.create({
   voteHint: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13, textAlign: 'center', marginTop: 12 },
   validationText: { color: THEME.bad, fontFamily: FONTS.bold, fontSize: 14, marginTop: 8 },
   sectionTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 18, letterSpacing: 1, marginTop: 26, marginBottom: 2 },
-  sectionTitleInCard: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 14, letterSpacing: 1.4, marginBottom: 4 },
+  sectionTitleInCard: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 14, letterSpacing: 1.4, marginBottom: 4 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   setupChip: {
     backgroundColor: THEME.surface,
@@ -2498,7 +2498,7 @@ const styles = StyleSheet.create({
     minHeight: 42,
     justifyContent: 'center',
   },
-  setupChipSelected: { backgroundColor: THEME.violet, borderColor: THEME.yellow },
+  setupChipSelected: { backgroundColor: THEME.violet, borderColor: THEME.violetEdge, boxShadow: CLAY.gloss },
   setupChipText: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 13, letterSpacing: 0.4 },
   toastTitle: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 15 },
   toastCopy: { color: THEME.onAccent, fontFamily: FONTS.semi, fontSize: 12, marginTop: 2, opacity: 0.8 },
@@ -2512,7 +2512,7 @@ const styles = StyleSheet.create({
   heroKicker: {
     alignSelf: 'flex-start',
     color: THEME.text,
-    backgroundColor: 'rgba(19,7,51,0.35)',
+    backgroundColor: 'rgba(255,255,255,0.78)',
     borderRadius: RADIUS.pill,
     overflow: 'hidden',
     paddingHorizontal: 12,
@@ -2522,14 +2522,17 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
   },
   heroTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 46, lineHeight: 48, marginTop: 18 },
-  heroTitleAccent: { color: THEME.yellow },
+  heroTitleAccent: { color: THEME.primary },
   heroCopy: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 16, lineHeight: 22, marginTop: 10, maxWidth: 290, opacity: 0.95 },
   teaser: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: 8,
-    backgroundColor: THEME.text,
+    backgroundColor: THEME.surface,
+    borderWidth: 2,
+    borderColor: THEME.line,
+    boxShadow: '0px 6px 14px rgba(109, 40, 217, 0.12)',
     borderRadius: RADIUS.md,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -2556,7 +2559,7 @@ const styles = StyleSheet.create({
   stepEmoji: { fontSize: 20 },
   stepText: { flex: 1, color: THEME.text, fontFamily: FONTS.semi, fontSize: 15, lineHeight: 20 },
   homeNote: { textAlign: 'center', color: THEME.dim, fontFamily: FONTS.bold, fontSize: 11, letterSpacing: 1, marginTop: 22 },
-  credit: { textAlign: 'center', color: THEME.yellow, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 2, marginTop: 8 },
+  credit: { textAlign: 'center', color: THEME.primary, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 2, marginTop: 8 },
 
   // ---- hall of fame
   fameCard: { ...card, marginTop: 14 },
@@ -2566,6 +2569,7 @@ const styles = StyleSheet.create({
   fameStats: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 12, lineHeight: 17 },
   badgeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
   badge: {
+    boxShadow: CLAY.card,
     width: '31%',
     flexGrow: 1,
     backgroundColor: THEME.surfaceHi,
@@ -2583,8 +2587,21 @@ const styles = StyleSheet.create({
   // ---- rooms
   roomCard: { ...card, marginTop: 16, marginBottom: 6 },
   roomCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  emptyCard: {
+    alignItems: 'center',
+    backgroundColor: THEME.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 2,
+    borderColor: THEME.line,
+    padding: 24,
+    marginTop: 18,
+    boxShadow: CLAY.card,
+  },
+  emptyEmoji: { fontSize: 64 },
+  emptyTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 22, marginTop: 8 },
+  emptyCopy: { color: THEME.muted, fontFamily: FONTS.regular, fontSize: 15, lineHeight: 22, textAlign: 'center', marginTop: 4, marginBottom: 6 },
   roomCardCopy: { color: THEME.text, fontFamily: FONTS.medium, fontSize: 14, lineHeight: 20, marginTop: 6 },
-  roomCode: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 62, letterSpacing: 12, marginVertical: 4 },
+  roomCode: { color: THEME.secondary, fontFamily: FONTS.black, fontSize: 62, letterSpacing: 12, marginVertical: 4 },
   roomStatus: { color: THEME.good, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 1 },
   roomStatusBad: { color: THEME.bad },
   roomMember: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 16, paddingTop: 10 },
@@ -2596,6 +2613,7 @@ const styles = StyleSheet.create({
   // ---- setup
   nameList: { marginTop: 20, gap: 10 },
   nameInputRow: {
+    boxShadow: CLAY.card,
     minHeight: 60,
     backgroundColor: THEME.surface,
     borderWidth: 2,
@@ -2609,10 +2627,11 @@ const styles = StyleSheet.create({
   removeButton: { width: 34, height: 44, alignItems: 'center', justifyContent: 'center' },
   removeButtonText: { color: THEME.muted, fontSize: 26 },
   addPlayer: { alignSelf: 'flex-start', paddingVertical: 14, paddingRight: 12 },
-  addPlayerText: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 14, letterSpacing: 1 },
+  addPlayerText: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 14, letterSpacing: 1 },
   modeBlock: { marginTop: 24 },
   modeList: { gap: 10, marginTop: 10 },
   modeOption: {
+    boxShadow: CLAY.card,
     backgroundColor: THEME.surface,
     borderColor: THEME.line,
     borderWidth: 2,
@@ -2624,15 +2643,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  modeSelected: { borderColor: THEME.yellow, backgroundColor: THEME.surfaceHi },
+  modeSelected: { borderColor: THEME.yellowEdge, backgroundColor: '#FFF6DA', boxShadow: '0px 8px 18px rgba(224, 161, 0, 0.18)' },
   modeEmoji: { fontSize: 30 },
   modeCopy: { flex: 1 },
   modeTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 16, letterSpacing: 0.5 },
   modeDescription: { color: THEME.muted, fontFamily: FONTS.medium, fontSize: 13, lineHeight: 17 },
-  modeCheck: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 20 },
+  modeCheck: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 20 },
   durationBlock: { marginTop: 22 },
   durationOptions: { flexDirection: 'row', gap: 10, marginTop: 10 },
   durationOption: {
+    boxShadow: CLAY.card,
     flex: 1,
     height: 66,
     borderRadius: RADIUS.md,
@@ -2644,14 +2664,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
-  durationSelected: { backgroundColor: THEME.yellow, borderColor: THEME.yellow },
+  durationSelected: { backgroundColor: THEME.yellow, borderColor: THEME.yellowEdge, boxShadow: CLAY.gloss },
   durationNumber: { color: THEME.text, fontFamily: FONTS.black, fontSize: 26 },
   durationNumberSelected: { color: THEME.onAccent },
   durationUnit: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 11, marginTop: 6 },
   optionBlock: { marginTop: 22 },
   segment: { flexDirection: 'row', backgroundColor: THEME.surfaceLo, borderRadius: RADIUS.md, padding: 4, marginTop: 10 },
   segmentOption: { flex: 1, minHeight: 44, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
-  segmentSelected: { backgroundColor: THEME.violet },
+  segmentSelected: { backgroundColor: THEME.violet, borderWidth: 2, borderColor: THEME.violetEdge, boxShadow: CLAY.gloss },
   segmentText: { color: THEME.text, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 0.6 },
 
   // ---- dealing
@@ -2661,11 +2681,11 @@ const styles = StyleSheet.create({
   phoneHandoff: { alignItems: 'center', marginBottom: 20 },
   handoffEmoji: { fontSize: 60, marginBottom: 4 },
   handoffTitle: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 16 },
-  handoffName: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 44, lineHeight: 50, textAlign: 'center' },
-  privateNudge: { color: THEME.cyan, fontFamily: FONTS.bold, fontSize: 14, textAlign: 'center', marginTop: 8 },
+  handoffName: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 44, lineHeight: 50, textAlign: 'center' },
+  privateNudge: { color: THEME.cyanText, fontFamily: FONTS.bold, fontSize: 14, textAlign: 'center', marginTop: 8 },
   dealCard: { minHeight: 210 },
   readyNote: { color: THEME.good, fontFamily: FONTS.bold, fontSize: 14, textAlign: 'center', marginVertical: 8 },
-  agentNotice: { color: THEME.pink, fontFamily: FONTS.black, fontSize: 15, textAlign: 'center', marginTop: 12 },
+  agentNotice: { color: THEME.pinkText, fontFamily: FONTS.black, fontSize: 15, textAlign: 'center', marginTop: 12 },
   readyPlayerList: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginVertical: 22 },
   readyPlayer: {
     color: THEME.text,
@@ -2686,7 +2706,7 @@ const styles = StyleSheet.create({
   livePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(71,229,143,0.15)',
+    backgroundColor: THEME.goodSoft,
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: RADIUS.pill,
@@ -2697,9 +2717,10 @@ const styles = StyleSheet.create({
   timerLabel: { color: THEME.muted, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 2 },
   timer: { color: THEME.text, fontFamily: FONTS.black, fontSize: 58, lineHeight: 66, fontVariant: ['tabular-nums'] },
   timerUrgent: { color: THEME.bad },
-  suddenDeathLabel: { color: THEME.pink, fontFamily: FONTS.black, fontSize: 13, letterSpacing: 1, marginTop: 8 },
+  suddenDeathLabel: { color: THEME.pinkText, fontFamily: FONTS.black, fontSize: 13, letterSpacing: 1, marginTop: 8 },
   playingHeadline: { color: THEME.text, fontFamily: FONTS.black, fontSize: 30, marginTop: 12 },
   activeEvent: {
+    boxShadow: CLAY.card,
     width: '100%',
     backgroundColor: THEME.surface,
     borderRadius: RADIUS.lg,
@@ -2708,8 +2729,8 @@ const styles = StyleSheet.create({
     padding: 14,
     marginTop: 14,
   },
-  activeEventUrgent: { borderColor: THEME.bad, backgroundColor: 'rgba(255,92,108,0.14)' },
-  activeEventTitle: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 15, letterSpacing: 0.5 },
+  activeEventUrgent: { borderColor: THEME.bad, backgroundColor: THEME.badSoft },
+  activeEventTitle: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 15, letterSpacing: 0.5 },
   activeEventText: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 14, lineHeight: 19, marginTop: 2 },
   swapCard: { width: '100%', backgroundColor: THEME.violet, borderRadius: RADIUS.lg, padding: 16, marginTop: 12 },
   swapText: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 15, lineHeight: 20, marginTop: 4, marginBottom: 2 },
@@ -2726,7 +2747,7 @@ const styles = StyleSheet.create({
     marginTop: 18,
     marginBottom: 6,
   },
-  tipMark: { color: THEME.yellow, fontSize: 20, marginRight: 10 },
+  tipMark: { color: THEME.primary, fontSize: 20, marginRight: 10 },
   tipRotator: { flex: 1, minHeight: 38, justifyContent: 'center' },
   tipText: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 14, lineHeight: 19, flexShrink: 1 },
 
@@ -2734,8 +2755,9 @@ const styles = StyleSheet.create({
   suspenseScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
   suspenseSiren: { fontSize: 76, marginBottom: 14 },
   suspenseTitle: { color: THEME.text, fontFamily: FONTS.black, fontSize: 34, lineHeight: 38, textAlign: 'center', marginTop: 8 },
-  suspenseCopy: { color: THEME.yellow, fontFamily: FONTS.bold, fontSize: 16, textAlign: 'center', marginTop: 10 },
+  suspenseCopy: { color: THEME.primary, fontFamily: FONTS.bold, fontSize: 16, textAlign: 'center', marginTop: 10 },
   revealBanner: {
+    boxShadow: CLAY.card,
     backgroundColor: THEME.surfaceHi,
     borderRadius: 28,
     borderWidth: 3,
@@ -2745,8 +2767,8 @@ const styles = StyleSheet.create({
   },
   tieBanner: { borderColor: THEME.pink },
   revealEmoji: { fontSize: 44, marginBottom: 4 },
-  comedyLine: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 18, lineHeight: 23, marginTop: 8 },
-  revealEventNote: { color: THEME.cyan, fontFamily: FONTS.bold, fontSize: 13, marginTop: 12 },
+  comedyLine: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 18, lineHeight: 23, marginTop: 8 },
+  revealEventNote: { color: THEME.cyanText, fontFamily: FONTS.bold, fontSize: 13, marginTop: 12 },
   reactionToast: {
     color: THEME.onAccent,
     backgroundColor: THEME.yellow,
@@ -2765,21 +2787,21 @@ const styles = StyleSheet.create({
   resultAvatar: { fontSize: 28 },
   resultPlayer: { flexShrink: 1, color: THEME.text, fontFamily: FONTS.black, fontSize: 19 },
   resultMission: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 16, lineHeight: 22, marginTop: 8, marginBottom: 12 },
-  resultNote: { color: THEME.cyan, fontFamily: FONTS.bold, fontSize: 12, lineHeight: 16, marginTop: -6, marginBottom: 10 },
+  resultNote: { color: THEME.cyanText, fontFamily: FONTS.bold, fontSize: 12, lineHeight: 16, marginTop: -6, marginBottom: 10 },
   resultOutcomeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   winPoints: { color: THEME.good, fontFamily: FONTS.black, fontSize: 15 },
   missedText: { color: THEME.bad, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 0.6 },
   autoNote: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13 },
   outcomeButtons: { flexDirection: 'row', gap: 10 },
-  outcomeButton: { flex: 1, borderRadius: RADIUS.md, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
-  successButton: { backgroundColor: THEME.good, borderBottomWidth: 4, borderBottomColor: '#1F9E5A' },
-  missedButton: { backgroundColor: THEME.bad, borderBottomWidth: 4, borderBottomColor: '#B92A3B' },
+  outcomeButton: { flex: 1, flexDirection: 'row', gap: 6, borderRadius: RADIUS.md, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  successButton: { backgroundColor: THEME.lime, borderBottomWidth: 5, borderBottomColor: THEME.limeEdge },
+  missedButton: { backgroundColor: '#FF9A9A', borderBottomWidth: 5, borderBottomColor: '#E05D5D' },
   outcomeText: { color: THEME.onAccent, fontFamily: FONTS.black, fontSize: 14, letterSpacing: 0.4 },
   swipeHint: { color: THEME.dim, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 1.2, textAlign: 'center', marginTop: 8 },
-  creativeTag: { color: THEME.pink, fontFamily: FONTS.black, fontSize: 13, marginTop: 10 },
+  creativeTag: { color: THEME.pinkText, fontFamily: FONTS.black, fontSize: 13, marginTop: 10 },
   denyButton: { alignSelf: 'flex-start', marginTop: 10, paddingVertical: 6 },
-  denyText: { color: THEME.orange, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 0.8 },
-  calloutPoints: { color: THEME.cyan, fontFamily: FONTS.black, fontSize: 13, marginTop: 10 },
+  denyText: { color: THEME.orangeText, fontFamily: FONTS.black, fontSize: 12, letterSpacing: 0.8 },
+  calloutPoints: { color: THEME.cyanText, fontFamily: FONTS.black, fontSize: 13, marginTop: 10 },
   reactionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2792,14 +2814,16 @@ const styles = StyleSheet.create({
   reactionPrompt: { color: THEME.dim, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 1 },
   reactionButton: { width: 40, height: 40, borderRadius: 14, backgroundColor: THEME.surfaceLo, alignItems: 'center', justifyContent: 'center' },
   reactionEmoji: { fontSize: 19 },
-  creativeBlock: { ...card, backgroundColor: THEME.surfaceHi, borderWidth: 2, borderColor: THEME.pink, marginVertical: 4 },
+  creativeBlock: {
+    boxShadow: CLAY.card, ...card, backgroundColor: THEME.surfaceHi, borderWidth: 2, borderColor: THEME.pink, marginVertical: 4 },
   miniLeaderboard: { ...card, marginTop: 12, marginBottom: 12 },
-  scoreSummaryTitle: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 15, letterSpacing: 1 },
+  scoreSummaryTitle: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 15, letterSpacing: 1 },
   scoreSummaryCopy: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13, marginTop: 2 },
 
   // ---- summary
   summaryEmoji: { fontSize: 60, marginBottom: 4 },
   summaryHighlight: {
+    boxShadow: CLAY.card,
     backgroundColor: THEME.surfaceHi,
     borderRadius: RADIUS.lg,
     borderWidth: 3,
@@ -2808,7 +2832,7 @@ const styles = StyleSheet.create({
     marginTop: 18,
     marginBottom: 14,
   },
-  summaryHighlightTitle: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 22, lineHeight: 27, marginTop: 6 },
+  summaryHighlightTitle: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 22, lineHeight: 27, marginTop: 6 },
   summaryHighlightCopy: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 12, marginTop: 4 },
   summaryHistory: { ...card, marginTop: 4, marginBottom: 12 },
   historyRow: { borderTopWidth: 1, borderTopColor: THEME.line, paddingVertical: 11 },
@@ -2816,7 +2840,7 @@ const styles = StyleSheet.create({
   historyDetail: { color: THEME.muted, fontFamily: FONTS.semi, fontSize: 13, lineHeight: 18, marginTop: 2 },
   motnRow: { borderTopWidth: 1, borderTopColor: THEME.line, paddingVertical: 12, gap: 6 },
   motnCrowned: {
-    backgroundColor: 'rgba(255,210,63,0.12)',
+    backgroundColor: '#FFF4D6',
     borderRadius: RADIUS.md,
     borderTopWidth: 0,
     borderWidth: 2,
@@ -2833,31 +2857,33 @@ const styles = StyleSheet.create({
     maxWidth: 360,
     minHeight: 560,
     aspectRatio: 9 / 16,
-    backgroundColor: THEME.bgDeep,
+    backgroundColor: THEME.pink,
     borderRadius: RADIUS.lg,
-    borderWidth: 3,
-    borderColor: THEME.yellow,
+    borderWidth: 4,
+    borderColor: THEME.surface,
+    overflow: 'hidden',
+    boxShadow: CLAY.raised,
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 16,
     marginVertical: 22,
   },
   shareCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  shareLogo: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 17, letterSpacing: 1.2 },
-  shareTag: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 8, letterSpacing: 0.6, flexShrink: 1, textAlign: 'right' },
+  shareLogo: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 17, letterSpacing: 1.2 },
+  shareTag: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 8, letterSpacing: 0.6, flexShrink: 1, textAlign: 'right' },
   shareContent: { flex: 1, justifyContent: 'center', paddingVertical: 14 },
   shareSiren: { fontSize: 36, marginBottom: 2 },
-  shareHeading: { color: THEME.text, fontFamily: FONTS.black, fontSize: 38, lineHeight: 40 },
-  shareSmallLabel: { color: THEME.lime, fontFamily: FONTS.black, fontSize: 10, letterSpacing: 1.2, marginTop: 10, marginBottom: 8 },
-  shareMission: { borderTopWidth: 1, borderTopColor: THEME.line, paddingVertical: 8 },
-  sharePlayer: { color: THEME.cyan, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 0.8 },
+  shareHeading: { color: THEME.text, fontFamily: FONTS.black, fontSize: 40, lineHeight: 42 },
+  shareSmallLabel: { color: THEME.secondary, fontFamily: FONTS.black, fontSize: 10, letterSpacing: 1.2, marginTop: 10, marginBottom: 8 },
+  shareMission: { backgroundColor: 'rgba(255,255,255,0.82)', borderRadius: RADIUS.sm, paddingVertical: 8, paddingHorizontal: 12, marginTop: 6 },
+  sharePlayer: { color: THEME.cyanText, fontFamily: FONTS.black, fontSize: 11, letterSpacing: 0.8 },
   shareMissionText: { color: THEME.text, fontFamily: FONTS.semi, fontSize: 12, lineHeight: 16, marginTop: 1 },
   shareOutcome: { fontFamily: FONTS.black, fontSize: 10, letterSpacing: 0.6, marginTop: 2 },
-  shareWin: { color: THEME.lime },
-  shareLoss: { color: THEME.pink },
+  shareWin: { color: THEME.limeText },
+  shareLoss: { color: THEME.pinkText },
   morePlayers: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 10, marginTop: 4 },
-  shareCardBottom: { borderTopWidth: 1, borderTopColor: THEME.line, paddingTop: 10 },
-  shareFooter: { color: THEME.muted, fontFamily: FONTS.bold, fontSize: 10, letterSpacing: 0.8 },
-  shareHashtag: { color: THEME.yellow, fontFamily: FONTS.black, fontSize: 14, marginTop: 2 },
+  shareCardBottom: { borderTopWidth: 2, borderTopColor: 'rgba(42,18,64,0.12)', paddingTop: 10 },
+  shareFooter: { color: THEME.text, fontFamily: FONTS.bold, fontSize: 10, letterSpacing: 0.8 },
+  shareHashtag: { color: THEME.primary, fontFamily: FONTS.black, fontSize: 14, marginTop: 2 },
   shareCredit: { color: THEME.dim, fontFamily: FONTS.black, fontSize: 8, letterSpacing: 1.2, marginTop: 4 },
 });
