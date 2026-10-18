@@ -1,4 +1,4 @@
-# LOWKEY web build, served by nginx. Built for Coolify (or any Docker host).
+# Party Spy web build, served by nginx. Built for Coolify (or any Docker host).
 #
 # The EXPO_PUBLIC_* values are compiled into the JavaScript at build time, so
 # pass them as build arguments (in Coolify: mark them as "Build Variable").

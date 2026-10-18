@@ -19,6 +19,8 @@ Dockerfile
 .dockerignore
 README.md
 *.test.ts
+store-assets
+*.aab
 
 # Google Play upload key
 google-play-service-account.json

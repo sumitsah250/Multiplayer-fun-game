@@ -7,14 +7,14 @@ blocks; upload the files from this folder.
 
 | Item | Where |
 |---|---|
-| App bundle (.aab) | `PartySpy-1.0.0-vc3.aab` on your Desktop |
+| App bundle (.aab) | `PartySpy-1.0.0-vc4.aab` on your Desktop |
 | App icon, 512 × 512 | `store-assets/play-store-icon-512.png` |
 | Feature graphic, 1024 × 500 | `store-assets/play-store-feature-graphic.png` |
 | Phone screenshots, 1080 × 1920 (min 2, max 8) | `store-assets/screenshots/` |
 | Privacy policy URL | `https://<your-coolify-domain>/privacy-policy.html` (the page ships with the web build) |
 | Developer email | Your support email, e.g. sumitsah250@gmail.com |
 
-Package name: **com.sumix.partyspy** (permanent). Version 1.0.0, version code 3.
+Package name: **com.sumix.partyspy** (permanent). Version 1.0.0, version code 4.
 
 ---
 
@@ -126,7 +126,7 @@ Review these against Google's current definitions before you submit; the final a
 
 ## 5. Release (Test and release)
 
-1. **Internal testing** first: Create new release → upload `PartySpy-1.0.0-vc3.aab` → release name `1.0.0 (3)` → paste the release notes below → Save → Review → Roll out. Add yourself as a tester and install from the opt-in link to check it on a real phone.
+1. **Internal testing** first: Create new release → upload `PartySpy-1.0.0-vc4.aab` → release name `1.0.0 (4)` → paste the release notes below → Save → Review → Roll out. Add yourself as a tester and install from the opt-in link to check it on a real phone.
 2. **Closed testing:** personal developer accounts created after November 2023 must run a closed test with **at least 12 testers for 14 days in a row** before Google allows production. Add 12+ friends' Gmail addresses as a tester list.
 3. **Production:** once the closed test requirement is met, apply for production access, promote the release, pick countries (all, or start with India and Nepal) and roll out. First reviews usually take a few days.
 
@@ -169,7 +169,7 @@ Hindi and Nepali notes only show if you add those languages under Store listing 
 
 ## 6. App facts (from the built bundle)
 
-- Permissions: **INTERNET, VIBRATE, WAKE_LOCK** only. Microphone and storage are blocked.
+- Permissions: **INTERNET, ACCESS_NETWORK_STATE, VIBRATE, WAKE_LOCK, MODIFY_AUDIO_SETTINGS**: all "normal" permissions that never show a prompt. Microphone, storage, photos and screenshot detection are blocked, so no Play permission declaration forms are needed.
 - No accounts, ads, analytics or in-app purchases. Pass-the-phone mode works offline.
 - Supports all phone CPU types (Play delivers only the matching one).
 
