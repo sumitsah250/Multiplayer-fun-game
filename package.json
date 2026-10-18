@@ -1,0 +1,46 @@
+{
+  "name": "lowkey-secret-mission",
+  "version": "1.0.0",
+  "description": "Secret missions for real-life hangouts.",
+  "main": "index.ts",
+  "dependencies": {
+    "@expo/metro-runtime": "~57.0.17",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@supabase/supabase-js": "^2.117.3",
+    "expo": "~57.0.30",
+    "expo-asset": "~57.0.20",
+    "expo-audio": "~57.0.5",
+    "expo-haptics": "~57.0.3",
+    "expo-keep-awake": "~57.0.2",
+    "expo-screen-capture": "~57.0.4",
+    "expo-sharing": "~57.0.23",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-reanimated": "4.5.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-svg": "15.15.4",
+    "react-native-view-shot": "5.1.0",
+    "react-native-web": "^0.21.2",
+    "react-native-worklets": "0.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "~19.2.2",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "lint": "expo lint",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "private": true
+}

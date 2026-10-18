@@ -1,0 +1,20 @@
+# Keep the Docker build context small and free of local secrets.
+node_modules
+.git
+.expo
+dist
+web-build
+ios
+android
+*.log
+npm-debug.*
+
+# Env values come from Coolify build variables, not local files.
+.env
+.env*.local
+
+# Not needed to build the web app.
+Dockerfile
+.dockerignore
+README.md
+*.test.ts
